@@ -1,5 +1,7 @@
 name: Classroom function check
 on:
+  push:
+    branches: [arena/20629a9d-agenttheengineer]
   workflow_dispatch:
 permissions:
   contents: read
