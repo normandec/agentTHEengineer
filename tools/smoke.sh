@@ -38,5 +38,9 @@ curl --fail-with-body --silent --show-error -X POST "$API/sheet/$SHEET/ops" \
   -H 'content-type: application/json' \
   -d '{"ops":[{"t":"path","pts":[[40,40],[100,75],[170,45]],"w":4,"c":"#1a73e8","close":false}]}' >/dev/null
 curl --fail-with-body --silent --show-error "$API/sheet/$SHEET/ops?since=0" | grep -q '"path"'
+# A 1×1 PNG verifies the snapshot storage path and the agent-friendly redirect endpoint.
+PIXEL='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3VwAAAABJRU5ErkJggg=='
+curl --fail-with-body --silent --show-error -X POST "$API/sheet/$SHEET/png" -H 'content-type: application/json'   -d "{"data_url":"data:image/png;base64,$PIXEL"}" | grep -q '"ok":true'
+curl --fail-with-body --silent --show-error --location "$API/sheet/$SHEET/png" >/dev/null
 
 echo "Smoke test passed for session $SID."

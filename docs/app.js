@@ -101,7 +101,10 @@
   function phaseName(phase) { return ({ research:"researching", draft:"drafting", critique:"checking", revise:"revising", vote:"voting", final:"writing answer", draw:"drawing", done:"complete" })[phase] || phase || "ready"; }
   function renderPhase() {
     if (!state.task || ["done", "failed"].includes(state.task.phase)) { els.phase.hidden = true; return; }
-    els.phase.hidden = false; els.phase.textContent = `Council ${phaseName(state.task.phase)} · round ${state.task.round}`;
+    const remaining = Math.max(0, new Date(state.task.deadline || Date.now()).getTime() - Date.now());
+    const seconds = Math.ceil(remaining / 1000);
+    const clock = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+    els.phase.hidden = false; els.phase.textContent = `Council ${phaseName(state.task.phase)} · round ${state.task.round} · ${clock}`;
   }
 
   function answerCard(final, deliberation) {

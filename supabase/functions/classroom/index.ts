@@ -664,6 +664,12 @@ Deno.serve(async (req) => {
         if (sheet) await tick(sheet.session_id);
         return json({ inserted: inserted.length, ops: inserted });
       }
+      // GET /sheet/:id/png  (a convenient agent-facing redirect to the public snapshot)
+      if (segs[2] === "png" && method === "GET") {
+        const { data: sheet } = await sb.from("cr_sheets").select("png_path").eq("id", sheetId).maybeSingle();
+        if (!sheet?.png_path) return err("sheet PNG not found", 404);
+        return new Response(null, { status: 302, headers: { ...CORS, location: publicUrl(sheet.png_path)! } });
+      }
       // POST /sheet/:id/png  (raster snapshot from the browser)
       if (segs[2] === "png" && method === "POST") {
         const b = await req.json().catch(() => ({}));
