@@ -34,7 +34,7 @@ jobs:
           node tools/fakecouncil.js "$CR_API" 150 > /tmp/fakecouncil.log 2>&1
           result=$?
           cat /tmp/fakecouncil.log
-          description="$(grep -E 'No final|No drawing|finished with|completed cleanly|setup error' /tmp/fakecouncil.log | tail -2 | tr '\n' ' ' | tr -cd '[:print:]' | cut -c1-130)"
+          description="$(grep -E 'fakecouncil finished|No final|No drawing|completed cleanly|setup error' /tmp/fakecouncil.log | tail -1 | tr '\n' ' ' | tr -cd '[:print:]' | cut -c1-130)"
           [ -n "$description" ] || description="$(tail -3 /tmp/fakecouncil.log | tr '\n' ' ' | tr -cd '[:print:]' | cut -c1-130)"
           [ -n "$description" ] || description="fake council produced no output"
           gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -f state=$([ "$result" -eq 0 ] && echo success || echo failure) -f context='AI Classroom fake council' -f description="$description"

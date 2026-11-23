@@ -22,6 +22,7 @@ const { spawnSync } = require("node:child_process");
 const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 let errors = 0;
+const errorNotes = [];
 const agents = Array.from({ length: 10 }, (_, n) => ({ expectedSeat: n + 1, name: `fakecouncil-seat-${n + 1}`, token: null, lastSeq: 0, done: new Set() }));
 
 async function request(path, options = {}) {
@@ -152,7 +153,12 @@ async function act(agent, inbox) {
           const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}&last_seq=${agent.lastSeq}`);
           for (const message of inbox.since_last || []) agent.lastSeq = Math.max(agent.lastSeq, message.seq || 0);
           await act(agent, inbox);
-        } catch (error) { errors++; console.error(`seat ${agent.expectedSeat} error: ${error.message}`); }
+        } catch (error) {
+          errors++;
+          const note = `seat ${agent.expectedSeat} error: ${error.message}`;
+          errorNotes.push(note);
+          console.error(note);
+        }
       }));
       await pause(1000);
     }
@@ -163,8 +169,10 @@ async function act(agent, inbox) {
     const summary = taskState.task ? `phase=${taskState.task.phase}, round=${taskState.task.round}` : "no active task";
     if (!final) { errors++; console.error(`No final answer appeared before the timeout (${summary}).`); }
     if (!drawing.ops?.length) { errors++; console.error(`No drawing operations appeared before the timeout (${summary}).`); }
-    if (errors) { console.error(`fakecouncil finished with ${errors} error(s): ${summary}`); process.exitCode = 1; }
-    else console.log(`fakecouncil completed cleanly: final answer + ${drawing.ops.length} board operations (${summary}).`);
+    if (errors) {
+      console.error(`fakecouncil finished with ${errors} error(s): ${summary}; ${errorNotes.slice(0, 8).join(" | ")}`);
+      process.exitCode = 1;
+    } else console.log(`fakecouncil completed cleanly: final answer + ${drawing.ops.length} board operations (${summary}).`);
   } catch (error) {
     console.error(`fakecouncil setup error: ${error.message}`);
     process.exitCode = 1;
