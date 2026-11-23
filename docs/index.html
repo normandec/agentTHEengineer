@@ -22,6 +22,7 @@
       <button id="sound-button" class="button quiet compact" type="button" title="Enable spoken council messages">🔈 Sound on</button>
       <button id="voice-skip-button" class="icon-button" type="button" title="Skip current voice" aria-label="Skip current voice">⏭</button>
       <button id="new-session" class="button quiet" type="button" title="Start a new classroom session">New session</button>
+      <button id="learn-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer" title="Open the learning library">✦ Learn</button>
       <button id="files-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">📁 Files <b id="files-count">0</b></button>
       <button id="sheets-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">Sheets</button>
       <button id="theme-button" class="icon-button" type="button" title="Use dark appearance" aria-label="Use dark appearance">◐</button>
@@ -51,15 +52,17 @@
       <form id="ask-form" class="composer">
         <label class="sr-only" for="question-input">Ask the council</label>
         <textarea id="question-input" rows="2" maxlength="4000" placeholder="Ask the council anything…  Try: Explain how a heat pump moves heat."></textarea>
-        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> fast · <kbd>/debate</kbd> full debate · <kbd>Ctrl↵</kbd> send</span><span class="composer-actions"><label class="files-button">+ Files<input id="files-input" type="file" multiple></label><button id="mic-button" class="icon-button compact-icon" type="button" title="Dictate question">🎤</button><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></span></div>
+        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> fast · <kbd>/debate</kbd> full debate · <kbd>Ctrl↵</kbd> send</span><span class="composer-actions"><label class="files-button" title="Attach files to this conversation">+ Files<input id="files-input" type="file" multiple></label><label class="files-button learn-upload" title="Upload study material for the council to learn">✦ Learn<input id="knowledge-input" type="file" multiple></label><button id="mic-button" class="icon-button compact-icon" type="button" title="Dictate question">🎤</button><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></span></div>
       </form>
     </section>
 
     <section class="board-pane" aria-label="Shared whiteboard">
       <div class="board-topline">
-        <div class="sheet-title"><span class="live-dot"></span><span id="sheet-name">Shared Sheet</span><span id="sheet-sync" class="sheet-sync">syncing…</span></div>
+        <div class="sheet-title"><span class="live-dot"></span><span id="sheet-name">Shared Sheet</span><span id="sheet-sync" class="sheet-sync">syncing…</span><span id="board-status" class="board-status" aria-live="polite">Waiting for saved marks</span></div>
         <div class="board-actions">
+          <button id="play-lesson" class="button quiet compact" type="button" title="Play the latest explanation with its sheet animation" disabled>▶ Play lesson</button>
           <button id="ask-sheet" class="button quiet compact" type="button">Ask about this sheet</button>
+          <button id="board-fullscreen-button" class="icon-button" type="button" title="Expand the shared sheet" aria-label="Expand the shared sheet" aria-pressed="false">⛶</button>
           <button id="download-png" class="icon-button" type="button" title="Download sheet as PNG" aria-label="Download sheet as PNG">⇩</button>
         </div>
       </div>
@@ -116,7 +119,14 @@
     <div id="sheets-list" class="sheets-list drawer-panel"></div>
     <div id="files-list" class="files-list drawer-panel" hidden></div>
     <div id="media-list" class="files-list drawer-panel" hidden></div>
-    <div id="knowledge-list" class="files-list drawer-panel" hidden><label>Search knowledge <input id="knowledge-search" type="search" placeholder="Search learned files"></label><div id="knowledge-results"></div></div>
+    <div id="knowledge-list" class="files-list drawer-panel" hidden>
+      <section class="learning-library">
+        <span class="learning-icon">✦</span><div><b>Learning library</b><p>Upload study material here and the council can retrieve it with page-level citations.</p></div>
+        <label class="button primary compact library-upload">+ Add study material<input id="library-knowledge-input" type="file" multiple></label>
+      </section>
+      <div id="knowledge-summary" class="knowledge-summary">No learned files yet.</div>
+      <label>Search knowledge <input id="knowledge-search" type="search" placeholder="Search learned files"></label><div id="knowledge-results"></div>
+    </div>
     <button id="new-sheet" class="button outline full" type="button">+ New sheet</button>
   </aside>
   <div id="drawer-scrim" class="drawer-scrim" hidden></div>

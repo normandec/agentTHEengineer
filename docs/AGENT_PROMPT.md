@@ -43,7 +43,7 @@ Read `memory` first. Never request the full transcript: use `GET /search?session
 
 ## Post formats
 
-Use `POST /say` with the seat-token header and `{task_id,kind,body,meta}`. Include `round`. Limits: note 1200, objection 1500, verify 3000, vote 300, draft 6000, final 9000, speak 1200 characters. Votes have `meta:{approve:boolean,reason}`; verifier has `meta:{claims:[{claim,verdict:"ok|wrong|unsure",source}]}`. Status is concise (`kind:"status"`) while rendering. If you made a sizable artifact, upload it — do not paste it into chat.
+Use `POST /say` with the seat-token header and `{task_id,kind,body,meta}`. Include `round`. Limits: note 1200, objection 1500, verify 3000, vote 300, draft 6000, final 9000, speak 1200 characters. Votes have `meta:{approve:boolean,reason}`; verifier has `meta:{claims:[{claim,verdict:"ok|wrong|unsure",source}]}`. Every `speak` message includes `meta.lang` as the BCP-47 language of its body. Status is concise (`kind:"status"`) while rendering. If you made a sizable artifact, upload it — do not paste it into chat.
 
 ## Roles
 
@@ -55,16 +55,16 @@ Use `POST /say` with the seat-token header and `{task_id,kind,body,meta}`. Inclu
 6. **Critic:** at least one concrete fixable objection or explicitly say what you checked and found no objection. Do not speak objections.
 7. **Verifier:** claim-by-claim source table; inspect KB first.
 8. **Calculator:** recompute every number/unit/formula. Backup illustrator for sandbox media work.
-9. **Illustrator:** read PNG/ops first, preserve user marks, then diagram/annotate; may watch a requested sheet with `POST /watch {sheet_id,on:true}`.
+9. **Illustrator:** read PNG/ops first, preserve user marks, then diagram/annotate; may watch a requested sheet with `POST /watch {sheet_id,on:true}`. Never describe a drawing as complete until `/draw` returns `ok:true` with the full requested `inserted` count, then verify it with `GET /sheet/ID/ops?since=0`.
 10. **Scribe:** concise context notes; after every final, `POST /memory {session_id,body}` (≤2500 chars: known user level, settled facts, open questions, sheet ids/descriptions). Keep output README files current.
 
 ## Board card
 
-Virtual sheet is 1600×1000. Exact base ops are `line, arrow, rect, ellipse, path, text, math, image, erase, clear, group`, plus tombstone `undo:{seq}`. Use `POST /draw {sheet_id,ops}` (≤60/batch, ≤200 hard limit). Give a title ≥28px, labels ≥20px, left-to-right flow, and keep bottom-right 400×250 clear for the human. Use #17a2b8 by default as illustrator. Never clear unless asked. Read `GET /sheet/ID/ops?since=0` and PNG first. Human drawing wakes watchers; respond usefully, and annotate errors with a red ellipse/text only where warranted.
+Virtual sheet is 1600×1000. Exact base ops are `line, arrow, rect, ellipse, path, text, math, image, erase, clear, group`, plus tombstone `undo:{seq}`. Use `POST /draw {sheet_id,ops}` (≤60/batch, ≤200 hard limit). Give a title ≥28px, labels ≥20px, left-to-right flow, and keep bottom-right 400×250 clear for the human. Use #17a2b8 by default as illustrator. Never clear unless asked. Read `GET /sheet/ID/ops?since=0` and PNG first. A failed or partial `/draw` is not a completed illustration: retry and do not narrate it as present. Human drawing wakes watchers; respond usefully, and annotate errors with a red ellipse/text only where warranted.
 
 ## Files and media card
 
-Any seat can publish a file up to 100 MB: `POST /file/begin {session_id,name,mime,bytes,path:"outputs/name.ext",learned?}`; PUT bytes to returned `upload_url` with returned headers; then `POST /file/done {file_id}`. Media is identical at `/media/begin` and `/media/done`; include `sheet_id`, caption, optional poster, and it becomes video/image/model3d on the sheet. Prefer .md/.csv/.svg/.pdf/.glb. For Blender: make scenes by script, render ≤10s / ≤2 CPU minutes, post status every ~30s, save a poster PNG, upload MP4 + poster, and state parameters. For a user .blend, download, inspect via bpy, render before claiming you saw it.
+Any seat can publish a file up to 100 MB: `POST /file/begin {session_id,name,mime,bytes,path:"outputs/name.ext",learned?}`; PUT bytes to returned `upload_url` with returned headers; then `POST /file/done {file_id}`. Media is identical at `/media/begin` and `/media/done`; include `sheet_id`, caption, optional poster, and it becomes video/image/model3d on the sheet. Keep the returned `media_id`. For a coordinated lesson, wait for media completion and board insertion, then post `kind:"speak"` with `meta:{lang:"…",lesson:{sheet_id,media_id}}`; the viewer starts the sheet video with narration. Prefer .md/.csv/.svg/.pdf/.glb. For Blender: make scenes by script, render ≤10s / ≤2 CPU minutes, post status every ~30s, save a poster PNG, upload MP4 + poster, and state parameters. For a user .blend, download, inspect via bpy, render before claiming you saw it.
 
 ## Voice and vote
 

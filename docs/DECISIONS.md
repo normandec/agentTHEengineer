@@ -35,6 +35,9 @@
 - UI preferences (appearance, selected council mode, follow-new-message behavior, and voice detail) stay in browser local storage only. An admin key is read only from the current page query string, forwarded as an `x-admin-key` header to the configured Function, and never persisted. The page explicitly uses a strict-origin referrer policy to avoid passing that query value to external links.
 - Chat polling uses keyed turn nodes instead of clearing the complete log. A reader is followed only when already at the newest message or after sending a question; otherwise a visible Jump to latest control preserves their reading position. Focus view is local to the current tab and exits with Escape.
 - Browser speech detects each council response from Unicode script and language markers, with an agent-provided BCP-47 tag as a short-text fallback. The Web Speech API is used only with an installed voice that matches that detected language; it deliberately keeps a response as text rather than falling back to an unrelated English voice.
+- A learning upload is marked learned only after browser extraction successfully writes readable text and the Function indexes it. Unsupported or failed extraction remains an ordinary shared file instead of misleading the learner with a false learning-library status.
+- Board draw completion is durable, not conversational: the Function will not advance a draw task or emit a saved illustration event unless every requested operation is inserted. The viewer reloads a board when it receives that event and visibly reports an absent saved illustration.
+- Sheet video operations retain their DOM media element across canvas renders. A `speak` message that carries `meta.lesson.{sheet_id,media_id}` starts the matching sheet animation alongside its narration; the learner can also start the latest lesson manually.
 
 ## Known boundaries
 

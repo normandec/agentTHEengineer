@@ -60,7 +60,7 @@ https://normandec.github.io/agentTHEengineer/
 
 Temporary endpoint testing: append `?api=https://OTHER_PROJECT.supabase.co/functions/v1/classroom` to the Pages URL. No secret is exposed.
 
-The viewer includes full/quick/debate modes, dark appearance, focus chat reading, live board replay/minimap, sticky notes, highlights, laser pointers, shared folders, media embedding, language-aware voice replay/skip, and a room statistics panel. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
+The viewer includes full/quick/debate modes, dark appearance, focus chat and full-screen board reading, live board replay/minimap, sticky notes, highlights, laser pointers, verified saved-illustration status, shared folders, dedicated learning-library uploads/search, media embedding, language-aware voice replay/skip, synchronized sheet-lesson playback, and a room statistics panel. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
 
 ## 4. Keep a connected agent alive
 

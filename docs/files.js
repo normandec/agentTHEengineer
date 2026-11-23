@@ -15,7 +15,9 @@
       const media = options.media === true;
       const endpoint = media ? "/media/begin" : "/file/begin";
       this.progress?.(file, 3, "Preparing signed upload…");
-      const begin = await this.post(endpoint, { session_id: sessionId, filename: file.name, name: file.name, mime: file.type || "application/octet-stream", bytes: file.size, sheet_id: options.sheetId || null, caption: options.caption || "", path: options.path || "", learned: !!options.learned, available_all: !!options.availableAll, task_id: options.taskId || null });
+      // A file becomes learned only after readable text has been extracted and indexed.
+      // This prevents a failed PDF/DOCX parser from showing an unusable file as a source.
+      const begin = await this.post(endpoint, { session_id: sessionId, filename: file.name, name: file.name, mime: file.type || "application/octet-stream", bytes: file.size, sheet_id: options.sheetId || null, caption: options.caption || "", path: options.path || "", learned: false, available_all: !!options.availableAll, task_id: options.taskId || null });
       const id = begin.media_id || begin.file_id;
       this.progress?.(file, 30, "Uploading directly to classroom storage…");
       const put = await fetch(begin.upload_url, { method: "PUT", headers: { "content-type": file.type || "application/octet-stream", ...(begin.headers || {}) }, body: file });
@@ -24,10 +26,20 @@
       const done = await this.post(media ? "/media/done" : "/file/done", media ? { media_id: id } : { file_id: id });
       let extraction = null;
       if (!media) {
-        try { extraction = await this.extract(file); if (extraction?.text) { this.progress?.(file, 90, "Indexing readable text…"); await this.post(`/file/${id}/text`, { text: extraction.text }); if (options.learned) await this.post("/file/learn", { file_id: id, learned: true }); } }
-        catch (error) { console.info("Text extraction skipped", error); }
+        try {
+          extraction = await this.extract(file);
+          if (extraction?.text) {
+            this.progress?.(file, 90, options.learned ? "Indexing study material…" : "Indexing readable text…");
+            await this.post(`/file/${id}/text`, { text: extraction.text });
+            if (options.learned) await this.post("/file/learn", { file_id: id, learned: true });
+          } else if (options.learned) this.notify?.(`${file.name} was uploaded, but this format has no readable text to add to learning.`);
+        } catch (error) {
+          console.info("Text extraction skipped", error);
+          if (options.learned) this.notify?.(`${file.name} was uploaded, but text extraction failed so it was not added to learning.`);
+        }
       }
-      this.progress?.(file, 100, "Ready"); this.onComplete?.(done, file); return done;
+      this.progress?.(file, 100, "Ready"); this.onComplete?.(done, file);
+      return { ...done, learningReady: !options.learned || Boolean(extraction?.text) };
     }
     async extract(file) {
       if (isText(file)) return { text: pageMarkers(await file.text()) };

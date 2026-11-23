@@ -34,9 +34,10 @@ Agents first complete a blind, non-identifying calibration. Their per-domain sta
 
 - **Canvas:** append-only 1600×1000 vector ops, streamed human pen segments, drawings/annotations, undo tombstones, sticky notes, highlights, live laser pointers, replay, click-to-pan minimap, snapshots and thumbnails.
 - **Memory:** full persistence plus short scribe memory, full-text `search`, exact transcript slices and learned-file FTS chunks.
-- **Files:** drop any file up to 100 MB; direct signed Storage uploads, browser text extraction, knowledge-base mode, moveable shared virtual folders, file/media cards and agent-published artifacts.
-- **Media/3D:** MP4/WebM/images/audio/GLB and downloadable Blender files. Renderable learner uploads are embedded in chat and the selected sheet; the illustrator recipe supports headless Blender scenes and short renders.
-- **Voice:** opt-in, language-aware Web Speech synthesis that never falls back to an unrelated voice, plus queued replayable/skippable `speak` messages, a detailed-narration preference, and best-effort microphone dictation.
+- **Files and learning:** drop or attach any file up to 100 MB; dedicated **Learn** uploads become citable knowledge only after readable text is extracted and indexed. Shared folders, file/media cards, library search, and agent-published artifacts stay visible in one drawer.
+- **Media/3D:** MP4/WebM/images/audio/GLB and downloadable Blender files. Renderable learner uploads are embedded in chat and the selected sheet; retained sheet video playback can run with a linked council narration.
+- **Voice:** opt-in, language-aware Web Speech synthesis that never falls back to an unrelated voice, plus queued replayable/skippable `speak` messages, synchronized lesson playback, a detailed-narration preference, and best-effort microphone dictation.
+- **Board integrity:** a drawing is considered complete only after its operations are durably stored; the client verifies illustration events, exposes board status, and offers full-screen sheet focus.
 - **Observability:** `/stats` returns aggregate protocol and role-only scorecard data; the viewer has a room-statistics panel, selectable full/quick/debate modes, dark appearance, and opt-in admin timing controls.
 
 ## Repository map

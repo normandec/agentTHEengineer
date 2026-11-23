@@ -9,9 +9,9 @@
   // never committed or persisted; it is forwarded only to the configured Function.
   const ADMIN_KEY = pageParams.get("admin") || "";
   const storageKey = `ai-classroom-session:${API}`;
-  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null, chatRenderKey: null, forceChatFollow: false, chatFocused: false };
+  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null, chatRenderKey: null, forceChatFollow: false, chatFocused: false, boardFocused: false, pendingLesson: null };
   const els = {
-    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count")
+    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), boardStatus: $("#board-status"), boardFocus: $("#board-fullscreen-button"), playLesson: $("#play-lesson"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), knowledgeSummary: $("#knowledge-summary"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), knowledgeInput: $("#knowledge-input"), libraryKnowledgeInput: $("#library-knowledge-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count")
   };
 
   function api(path, options = {}) {
@@ -147,7 +147,7 @@
     }
     if (deliberation.length) node.append(deliberationDetails(deliberation));
     const actions = document.createElement("div"); actions.className = "answer-actions";
-    [["👍","Helpful feedback"],["👎","Needs improvement"],["Explain simpler","Explain the last answer in simpler language."],["Go deeper","Go deeper on the last answer with sources."],["Draw it","Draw a clearer labelled explanation on the current sheet."],["Animate it (Blender)","Create a short Blender animation explaining the last answer and upload it."],["Quiz me on this","Quiz me with five questions about the last answer."],["Speak it","Speak a short summary of the last answer."]].forEach(([label,prompt]) => { const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=> { if(label==="👍"||label==="👎") post("/feedback",{session_id:state.sessionId,task_id:final.meta?.task_id,rating:label==="👍"?1:-1,body:prompt}).then(()=>toast("Feedback shared with the council.")); else ask(prompt); }); actions.append(b); });
+    [["👍","Helpful feedback"],["👎","Needs improvement"],["Explain simpler","Explain the last answer in simpler language."],["Go deeper","Go deeper on the last answer with sources."],["Study guide","Turn the last answer and relevant learning-library material into a concise study guide with key terms, retrieval questions, and sources."],["Flashcards","Create ten high-quality question-and-answer flashcards from the last answer and any relevant learned files."],["Practice","Create a graduated practice set from the last answer. Ask one question at a time and wait for my reply before revealing feedback."],["Draw it","Draw a clearer labelled explanation on the current sheet. Confirm the saved board operations before saying the drawing is complete."],["Animate it (Blender)","Create a short sheet-linked animation explaining the last answer, upload it, and publish a synchronized narration only after the video and board ops are saved."],["Quiz me on this","Quiz me with five questions about the last answer."],["Speak it","Speak a short summary of the last answer."]].forEach(([label,prompt]) => { const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=> { if(label==="👍"||label==="👎") post("/feedback",{session_id:state.sessionId,task_id:final.meta?.task_id,rating:label==="👍"?1:-1,body:prompt}).then(()=>toast("Feedback shared with the council.")); else ask(prompt); }); actions.append(b); });
     node.append(actions); addCopyButtons(node);
     return node;
   }
@@ -175,7 +175,13 @@
     else if (url) body += `<a class="button outline compact" href="${escapeHtml(url)}" target="_blank" rel="noopener">Download</a>`;
     node.innerHTML = body; return node;
   }
-  function speakCard(message) { const n=document.createElement("article"); n.className="message speak-card"; n.innerHTML=`<span>🔊</span><div><b>${escapeHtml(message.author || "Council")}</b><p>${escapeHtml(message.body)}</p></div><button type="button">Replay</button>`; n.querySelector("button").addEventListener("click",()=>voice.replay(message.body,message.meta)); return n; }
+  function speakCard(message) {
+    const card = document.createElement("article"); card.className = "message speak-card";
+    const linkedMedia = message.meta?.media_id || message.meta?.media_url || message.meta?.lesson?.media_id || message.meta?.lesson?.media_url;
+    card.innerHTML = `<span>🔊</span><div><b>${escapeHtml(message.author || "Council")}</b><p>${escapeHtml(message.body)}</p></div><button type="button">${linkedMedia ? "Play lesson" : "Replay"}</button>`;
+    card.querySelector("button").addEventListener("click", () => linkedMedia ? playLesson(message) : voice.replay(message.body, message.meta));
+    return card;
+  }
 
   function nearChatBottom() {
     return els.chat.scrollHeight - els.chat.scrollTop - els.chat.clientHeight < 72;
@@ -295,6 +301,7 @@
   function humanBytes(bytes) { const n=Number(bytes)||0; return n < 1024*1024 ? `${Math.round(n/1024)} KB` : `${(n/1024/1024).toFixed(1)} MB`; }
   function renderAssets() {
     els.filesCount.textContent = state.files.length;
+    const learned = state.files.filter((file) => file.learned);
     const paths = new Set(state.folders.map((folder) => folder.path));
     for (const file of state.files) {
       const bits = String(file.path || "").split("/").filter(Boolean);
@@ -302,26 +309,39 @@
     }
     const folders = [...paths].sort();
     const currentFiles = state.files.filter((file) => String(file.path || "") === state.fileFolder);
-    els.filesList.innerHTML = `<div class="file-tools"><button type="button" id="new-folder-button">+ Folder</button><span>${escapeHtml(state.fileFolder || "Shared files")}</span></div><div class="folder-tree"><button type="button" class="${state.fileFolder ? "" : "active"}" data-folder="">⌂ Shared files</button>${folders.map((path) => `<button type="button" class="${path === state.fileFolder ? "active" : ""}" data-folder="${escapeHtml(path)}">⌁ ${escapeHtml(path)}</button>`).join("")}</div>`;
+    els.filesList.innerHTML = `<div class="file-tools"><span>${escapeHtml(state.fileFolder || "Shared files")}</span><span><button type="button" id="attach-file-button">+ Upload</button><button type="button" id="learn-file-button">✦ Learn</button><button type="button" id="new-folder-button">+ Folder</button></span></div><div class="folder-tree"><button type="button" class="${state.fileFolder ? "" : "active"}" data-folder="">⌂ Shared files</button>${folders.map((path) => `<button type="button" class="${path === state.fileFolder ? "active" : ""}" data-folder="${escapeHtml(path)}">⌁ ${escapeHtml(path)}</button>`).join("")}</div>`;
     const list = document.createElement("div"); list.className = "file-rows";
     if (!currentFiles.length) list.innerHTML = `<p class="eyebrow">No files in this folder</p>`;
     for (const file of currentFiles) {
       const row = document.createElement("article"); row.className = "file-item";
-      const icon = file.learned ? "📚" : "📄";
-      row.innerHTML = `<span>${icon}</span><div><b>${escapeHtml(file.name)}</b><small>${humanBytes(file.bytes)} · ${escapeHtml(file.author || "You")}</small></div><a href="${escapeHtml(file.url || "#")}" target="_blank" download>⇩</a>`;
-      const learn = document.createElement("button"); learn.type = "button"; learn.textContent = file.learned ? "Un-learn" : "Learn";
-      learn.addEventListener("click", async () => { try { await post("/file/learn", { file_id: file.id, learned: !file.learned }); await refreshAssets(); toast(file.learned ? "Removed from knowledge." : "Added to knowledge."); } catch (error) { toast(error.message); } });
+      const icon = file.learned ? "📚" : "📄", learning = file.learned ? "In learning library" : "Available to this conversation";
+      row.innerHTML = `<span>${icon}</span><div><b>${escapeHtml(file.name)}</b><small>${humanBytes(file.bytes)} · ${escapeHtml(file.author || "You")} · ${learning}</small></div><a href="${escapeHtml(file.url || "#")}" target="_blank" download>⇩</a>`;
+      const learn = document.createElement("button"); learn.type = "button"; learn.textContent = file.learned ? "Remove learning" : "Add to learning";
+      learn.addEventListener("click", async () => { try { await post("/file/learn", { file_id: file.id, learned: !file.learned }); await refreshAssets(); toast(file.learned ? "Removed from the learning library." : "Added to the learning library."); } catch (error) { toast(error.message); } });
       const move = document.createElement("button"); move.type = "button"; move.textContent = "Move";
       move.addEventListener("click", async () => { const path = window.prompt("Move file to folder (blank for Shared files):", file.path || ""); if (path === null) return; try { await post("/files/move", { session_id: state.sessionId, file_id: file.id, path }); state.fileFolder = path.trim().replace(/^\/+|\/+$/g, ""); await refreshAssets(); } catch (error) { toast(`Could not move ${file.name}: ${error.message}`); } });
       row.append(learn, move); list.append(row);
     }
     els.filesList.append(list);
     els.filesList.querySelectorAll("[data-folder]").forEach((button) => button.addEventListener("click", () => { state.fileFolder = button.dataset.folder || ""; renderAssets(); }));
+    $("#attach-file-button").addEventListener("click", () => els.filesInput.click());
+    $("#learn-file-button").addEventListener("click", () => els.knowledgeInput.click());
     $("#new-folder-button").addEventListener("click", async () => { const path = window.prompt("Name a shared folder:", state.fileFolder ? `${state.fileFolder}/` : ""); if (!path?.trim()) return; try { await post("/files/mkdir", { session_id: state.sessionId, path }); state.fileFolder = path.trim().replace(/^\/+|\/+$/g, ""); await refreshAssets(); toast("Shared folder created."); } catch (error) { toast(`Could not create folder: ${error.message}`); } });
+    els.knowledgeSummary.innerHTML = learned.length ? `<b>${learned.length} learned file${learned.length === 1 ? "" : "s"}</b><span>The council can cite these materials when answering.</span><div class="learned-file-list">${learned.slice(0, 8).map((file) => `<span>📚 ${escapeHtml(file.name)}</span>`).join("")}</div>` : "<b>Nothing learned yet</b><span>Add a study file to give the council a private, citable source.</span>";
     els.mediaList.innerHTML = state.media.length ? "" : `<p class="eyebrow">No media yet</p>`;
-    for (const item of state.media) { const row = document.createElement("article"); row.className = "file-item"; row.innerHTML = `<span>${item.kind === "video" ? "▶" : item.kind === "model3d" ? "◇" : item.kind === "audio" ? "♪" : "▧"}</span><div><b>${escapeHtml(item.filename)}</b><small>${escapeHtml(item.caption || item.kind)} · ${humanBytes(item.bytes)}</small></div><a href="${escapeHtml(item.url || "#")}" target="_blank">Open</a>`; els.mediaList.append(row); }
+    for (const item of state.media) {
+      const row = document.createElement("article"); row.className = "file-item";
+      row.innerHTML = `<span>${item.kind === "video" ? "▶" : item.kind === "model3d" ? "◇" : item.kind === "audio" ? "♪" : "▧"}</span><div><b>${escapeHtml(item.filename)}</b><small>${escapeHtml(item.caption || item.kind)} · ${humanBytes(item.bytes)}</small></div><a href="${escapeHtml(item.url || "#")}" target="_blank">Open</a>`;
+      if (item.kind === "video") { const play = document.createElement("button"); play.type = "button"; play.textContent = "Play on sheet"; play.addEventListener("click", () => playLesson({ meta: { media_id: item.id, media_url: item.url }, body: "" })); row.append(play); }
+      els.mediaList.append(row);
+    }
   }
 
+  function updateBoardStatus(count, local = false) {
+    if (local) els.boardStatus.textContent = "Saving your mark…";
+    else if (!count) els.boardStatus.textContent = "Waiting for saved marks";
+    else els.boardStatus.textContent = `${count} saved board mark${count === 1 ? "" : "s"}`;
+  }
   const board = new window.ClassroomBoard($("#board"), {
     minimap: $("#minimap"),
     onCommit: async (ops) => {
@@ -344,7 +364,7 @@
     onInfo: toast,
     onReplay: (playing) => { const b = $("#replay-button"); b.classList.toggle("active", playing); b.title = playing ? "Stop sheet replay" : "Replay this sheet from the beginning"; },
     onZoom: (zoom) => { els.zoom.textContent = `${Math.round(zoom * 100)}%`; },
-    onRender: ({ count, local, dirty }) => { els.ops.textContent = `${count} operation${count === 1 ? "" : "s"}`; els.empty.style.opacity = count ? "0" : "1"; if (local || dirty) state.pngDirty = true; }
+    onRender: ({ count, local, dirty }) => { els.ops.textContent = `${count} operation${count === 1 ? "" : "s"}`; els.empty.style.opacity = count ? "0" : "1"; updateBoardStatus(count, local); window.setTimeout(() => { els.playLesson.disabled = !board.hasPlayableMedia(); }, 0); if (local || dirty) state.pngDirty = true; }
   });
 
   async function openSheet(id) {
@@ -356,9 +376,18 @@
     board.setLivePointer(data.sheet.state?.pointer || null);
     els.sheetName.textContent = data.sheet.title;
     els.sync.textContent = "synced";
+    els.playLesson.disabled = !board.hasPlayableMedia();
     renderSheets();
   }
 
+  async function reloadBoard(message = "") {
+    if (!state.activeSheet) return false;
+    const data = await api(`/sheet/${state.activeSheet.id}`);
+    board.setRows(data.ops || []); board.setLivePointer(data.sheet?.state?.pointer || null);
+    els.sync.textContent = "synced"; els.playLesson.disabled = !board.hasPlayableMedia();
+    if (message) toast(message);
+    return (data.ops || []).length > 0;
+  }
   async function pollOps() {
     if (state.opsPolling || !state.activeSheet) return;
     state.opsPolling = true;
@@ -369,8 +398,35 @@
         board.appendRows(data.ops, progressive);
         els.sync.textContent = "synced";
       }
-    } catch (error) { /* session polling displays durable failures; do not spam a drawing toast */ }
+      els.playLesson.disabled = !board.hasPlayableMedia();
+    } catch (error) { els.boardStatus.textContent = "Board sync needs a retry"; }
     finally { state.opsPolling = false; }
+  }
+  async function verifyBoardEvent(message) {
+    if (!message?.meta?.sheet_id || message.meta.sheet_id !== state.activeSheet?.id || !Number(message.meta?.count)) return;
+    try {
+      const hasOps = await reloadBoard();
+      if (!hasOps) {
+        els.boardStatus.textContent = "Illustration was not saved";
+        toast("The council reported a drawing, but no saved board marks arrived. It must retry before claiming completion.", 6500);
+      }
+    } catch (_) { els.boardStatus.textContent = "Could not verify the illustration"; }
+  }
+  function lessonReference(message) {
+    const meta = message?.meta || {}, lesson = meta.lesson || {};
+    return lesson.media_id || meta.media_id || lesson.media_url || meta.media_url || meta.url || "";
+  }
+  async function startLessonMedia(message) {
+    const started = await board.playMedia(lessonReference(message));
+    if (!started) toast("No playable lesson animation is on this sheet yet.");
+    return started;
+  }
+  async function playLesson(message) {
+    const latest = [...state.messages.values()].reverse();
+    const narration = message?.body ? message : latest.find((item) => item.kind === "speak" && lessonReference(item)) || latest.find((item) => item.kind === "speak") || null;
+    const started = await startLessonMedia(narration);
+    if (narration?.body) voice.replay(narration.body, narration.meta || {});
+    if (started) els.boardStatus.textContent = "Playing explanation with sheet animation";
   }
 
   async function createSession() {
@@ -397,12 +453,19 @@
       state.settings = data.settings || state.settings;
       renderCouncil(data.council || []); renderPhase(); renderChat(); renderSheets();
       els.ticker.textContent = window.ClassroomUI?.ticker(data.messages || [], state.task) || "Council ready";
-      for (const message of data.messages || []) if (message.kind === "speak" && !state.seenSpeak.has(message.seq)) { state.seenSpeak.add(message.seq); voice.enqueue(message); }
+      const boardEvents = (data.messages || []).filter((message) => message.kind === "board_event");
+      for (const message of data.messages || []) if (message.kind === "speak" && !state.seenSpeak.has(message.seq)) {
+        state.seenSpeak.add(message.seq); voice.enqueue(message);
+        if (lessonReference(message)) state.pendingLesson = message;
+      }
       if (!state.activeSheet && state.sheets.length) await openSheet(state.sheets[state.sheets.length - 1].id);
       const activeMeta = state.sheets.find((sheet) => sheet.id === state.activeSheet?.id);
       if (activeMeta?.state?.pointer) board.setLivePointer(activeMeta.state.pointer);
       if (activeMeta?.state?.fresh_requested_at) { state.pngDirty = true; await snapshot(true); }
-      await pollOps(); await refreshAssets();
+      await pollOps();
+      for (const event of boardEvents) await verifyBoardEvent(event);
+      if (state.pendingLesson) { const lesson = state.pendingLesson; state.pendingLesson = null; await startLessonMedia(lesson); }
+      await refreshAssets();
       if (first) els.question.focus();
     } catch (error) {
       showNotice(`Connection issue: ${error.message}`);
@@ -424,9 +487,10 @@
     finally { els.ask.disabled = false; els.question.disabled = false; els.question.focus(); }
   }
 
-  function openDrawer() { els.drawer.classList.add("open"); els.drawer.setAttribute("aria-hidden", "false"); els.scrim.hidden = false; $("#sheets-button").setAttribute("aria-expanded", "true"); }
-  function closeDrawer() { els.drawer.classList.remove("open"); els.drawer.setAttribute("aria-hidden", "true"); els.scrim.hidden = true; $("#sheets-button").setAttribute("aria-expanded", "false"); }
+  function openDrawer() { els.drawer.classList.add("open"); els.drawer.setAttribute("aria-hidden", "false"); els.scrim.hidden = false; $("#sheets-button").setAttribute("aria-expanded", "true"); $("#files-button").setAttribute("aria-expanded", "true"); $("#learn-button").setAttribute("aria-expanded", "true"); }
+  function closeDrawer() { els.drawer.classList.remove("open"); els.drawer.setAttribute("aria-hidden", "true"); els.scrim.hidden = true; $("#sheets-button").setAttribute("aria-expanded", "false"); $("#files-button").setAttribute("aria-expanded", "false"); $("#learn-button").setAttribute("aria-expanded", "false"); }
   function setChatFocus(focused) {
+    if (focused && state.boardFocused) setBoardFocus(false);
     const wasFollowing = nearChatBottom();
     state.chatFocused = Boolean(focused);
     document.body.classList.toggle("chat-focus", state.chatFocused);
@@ -434,6 +498,15 @@
     els.chatFocus.textContent = state.chatFocused ? "× Exit focus" : "⛶ Full chat";
     els.chatFocus.title = state.chatFocused ? "Return to the shared room" : "Expand the conversation for focused reading";
     requestAnimationFrame(() => { if (wasFollowing) { els.chat.scrollTop = els.chat.scrollHeight; els.jumpLatest.hidden = true; } });
+  }
+  function setBoardFocus(focused) {
+    if (focused && state.chatFocused) setChatFocus(false);
+    state.boardFocused = Boolean(focused);
+    document.body.classList.toggle("board-focus", state.boardFocused);
+    els.boardFocus.setAttribute("aria-pressed", String(state.boardFocused));
+    els.boardFocus.textContent = state.boardFocused ? "×" : "⛶";
+    els.boardFocus.title = state.boardFocused ? "Return to the shared room" : "Expand the shared sheet";
+    requestAnimationFrame(() => board.resize());
   }
 
   async function newSheet() {
@@ -458,12 +531,14 @@
   }
 
   async function uploadFiles(fileList, learned = false) {
-    for (const file of [...fileList]) {
+    const queue = [...fileList];
+    if (learned && queue.length) { openDrawer(); switchDrawer("knowledge"); }
+    for (const file of queue) {
       const ext = (file.name.split(".").pop() || "").toLowerCase();
       const media = /^(image|video|audio)\//.test(file.type) || ["glb", "gltf", "stl", "obj"].includes(ext);
       try {
-        await files.upload(file, { learned: learned && !media, media, sheetId: media ? state.activeSheet?.id || null : null, taskId: state.task?.id || null, path: media ? "" : state.fileFolder, caption: media ? `${file.name} shared by the learner.` : "" });
-        toast(media ? `${file.name} is embedded in the room.` : `${file.name} is available to the council.`);
+        const result = await files.upload(file, { learned: learned && !media, media, sheetId: media ? state.activeSheet?.id || null : null, taskId: state.task?.id || null, path: media ? "" : state.fileFolder, caption: media ? `${file.name} shared by the learner.` : "" });
+        toast(media ? `${file.name} is embedded in the room.` : learned && result.learningReady ? `${file.name} is ready for the council to cite.` : learned ? `${file.name} is stored, but not yet readable learning material.` : `${file.name} is available to the council.`);
       } catch (error) { toast(`Could not upload ${file.name}: ${error.message}`, 5000); }
     }
   }
@@ -507,6 +582,8 @@
   $("#sound-button").addEventListener("click", () => voice.setEnabled(!voice.enabled));
   $("#voice-skip-button").addEventListener("click", () => { voice.skip(); toast("Voice skipped."); });
   els.chatFocus.addEventListener("click", () => setChatFocus(!state.chatFocused));
+  els.boardFocus.addEventListener("click", () => setBoardFocus(!state.boardFocused));
+  els.playLesson.addEventListener("click", () => playLesson());
   els.jumpLatest.addEventListener("click", () => { els.chat.scrollTop = els.chat.scrollHeight; els.jumpLatest.hidden = true; });
   els.chat.addEventListener("scroll", updateJumpLatest, { passive: true });
   $("#theme-button").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
@@ -520,9 +597,13 @@
   $("#refresh-stats").addEventListener("click", refreshStats); $("#save-settings").addEventListener("click", saveAdminSettings); $("#export-session").addEventListener("click", exportSession);
   $("#mic-button").addEventListener("click", () => { try { voice.dictate(els.question); } catch (error) { toast(error.message); } });
   els.filesInput.addEventListener("change", () => { uploadFiles(els.filesInput.files); els.filesInput.value = ""; });
+  const addToKnowledge = (input) => { input.addEventListener("change", () => { uploadFiles(input.files, true); input.value = ""; }); };
+  addToKnowledge(els.knowledgeInput); addToKnowledge(els.libraryKnowledgeInput);
   $("#files-button").addEventListener("click", () => { openDrawer(); switchDrawer("files"); });
+  $("#learn-button").addEventListener("click", () => { openDrawer(); switchDrawer("knowledge"); });
   document.querySelectorAll("[data-drawer-tab]").forEach((b) => b.addEventListener("click", () => switchDrawer(b.dataset.drawerTab)));
-  $("#knowledge-search").addEventListener("change", async (event) => { const q=event.target.value.trim(); if(!q||!state.sessionId)return; try{const data=await api(`/kb/search?session_id=${state.sessionId}&q=${encodeURIComponent(q)}`);$("#knowledge-results").innerHTML=(data.hits||[]).map((hit)=>`<article class="knowledge-hit"><b>${escapeHtml(hit.file)}${hit.page?` p.${hit.page}`:""}</b><p>${escapeHtml(hit.text)}</p></article>`).join("")||"No matching chunks.";}catch(e){toast(e.message)} });
+  let knowledgeSearchTimer = null;
+  $("#knowledge-search").addEventListener("input", (event) => { clearTimeout(knowledgeSearchTimer); knowledgeSearchTimer = setTimeout(async () => { const q = event.target.value.trim(); if (!state.sessionId) return; if (!q) { $("#knowledge-results").textContent = ""; return; } try { const data = await api(`/kb/search?session_id=${state.sessionId}&q=${encodeURIComponent(q)}`); $("#knowledge-results").innerHTML = (data.hits || []).map((hit) => `<article class="knowledge-hit"><b>${escapeHtml(hit.file)}${hit.page ? ` p.${hit.page}` : ""}</b><p>${escapeHtml(hit.text)}</p></article>`).join("") || "No matching chunks."; } catch (error) { toast(error.message); } }, 240); });
   // A drag event can be fired by a browser integration without a file payload.
   // Show the full-screen drop target only for real files, and always provide a
   // deterministic close path so it cannot trap the classroom behind an overlay.
@@ -544,6 +625,7 @@
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && !els.drop.hidden) { closeDropZone(); return; }
     if (event.key === "Escape" && state.chatFocused) { event.preventDefault(); setChatFocus(false); return; }
+    if (event.key === "Escape" && state.boardFocused) { event.preventDefault(); setBoardFocus(false); return; }
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); ask(els.question.value); }
     if (event.target.matches("textarea,input")) return;
     if (event.key.toLowerCase() === "n") newSheet();

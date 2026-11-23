@@ -2,8 +2,9 @@
 /*
  * A deterministic polling council for an API smoke test.
  * Usage: node tools/fakecouncil.js <API_URL> [seconds]
- * It creates a session, claims all ten seats, asks a sample question, then
- * follows the same /inbox -> /say|/draw loop a real agent uses.
+ * It creates a session, reclaims its available test seats, asks a sample
+ * question, then follows the same /inbox -> /say|/draw loop a real agent uses.
+ * Live named classroom workers keep their own seats; the test never evicts them.
  */
 "use strict";
 
@@ -23,7 +24,7 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 let errors = 0;
 const errorNotes = [];
-const agents = Array.from({ length: 10 }, (_, n) => ({ expectedSeat: n + 1, name: `fakecouncil-seat-${n + 1}`, token: null, lastSeq: 0, done: new Set() }));
+const agents = Array.from({ length: 10 }, (_, n) => ({ expectedSeat: n + 1, seat: null, name: `fakecouncil-seat-${n + 1}`, token: null, lastSeq: 0, done: new Set() }));
 
 async function request(path, options = {}) {
   const response = await fetch(base + path, {
@@ -59,7 +60,10 @@ function finalAnswer() {
 async function claim(agent) {
   const claimed = await post("/claim", { name: agent.name });
   agent.token = claimed.token;
-  if (claimed.seat !== agent.expectedSeat) throw new Error(`${agent.name} claimed seat ${claimed.seat}, expected ${agent.expectedSeat}`);
+  agent.seat = claimed.seat;
+  // Seats may already be occupied by a long-lived classroom worker. The
+  // acceptance council follows its actual role instead of assuming a pristine
+  // database or misrepresenting a role after a reclaim.
   const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}`);
   if (inbox.calibration) await post("/calibrate", { answers: inbox.calibration.questions.map((q) => ({ id: q.id, answer: "" })), strengths: ["clear explanations"], weaknesses: ["long arithmetic"] }, agent.token);
   console.log(`claimed and calibrated seat ${claimed.seat} (${claimed.role})`);
@@ -69,7 +73,7 @@ async function say(agent, task, kind, body, meta = {}) {
   if (agent.done.has(key)) return;
   await post("/say", { task_id: task.id, kind, body, meta: { ...meta, round: task.round } }, agent.token);
   agent.done.add(key);
-  console.log(`seat ${agent.expectedSeat} → ${kind} (${task.phase}, round ${task.round})`);
+  console.log(`seat ${agent.seat} → ${kind} (${task.phase}, round ${task.round})`);
 }
 async function signedPut(uploadUrl, headers, bytes, mime) {
   const response = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": mime, ...(headers || {}) }, body: bytes });
@@ -85,7 +89,9 @@ async function sampleVideo(agent, sessionId, sheetId) {
   const bytes = made.status === 0 ? readFileSync(out) : Buffer.from("AI CLASSROOM demo video placeholder");
   try { unlinkSync(out); } catch (_) {}
   const begin = await post("/media/begin", { session_id: sessionId, sheet_id: sheetId, filename: "heat-pump-cycle.mp4", mime: "video/mp4", bytes: bytes.length, caption: "Three-second heat-pump cycle animation." }, agent.token);
-  await signedPut(begin.upload_url, begin.headers, bytes, "video/mp4"); return post("/media/done", { media_id: begin.media_id }, agent.token);
+  await signedPut(begin.upload_url, begin.headers, bytes, "video/mp4");
+  const done = await post("/media/done", { media_id: begin.media_id }, agent.token);
+  return { ...done, media_id: begin.media_id };
 }
 
 async function draw(agent, task, sheet) {
@@ -105,16 +111,18 @@ async function draw(agent, task, sheet) {
     { t: "text", x: 90, y: 545, s: "COP = heat delivered ÷ electricity used", size: 29, c: "#7b42bc", align: "left" },
     { t: "text", x: 90, y: 595, s: "Cold weather: larger temperature lift → lower COP", size: 22, c: "#d93025", align: "left" },
   ];
-  await post("/draw", { sheet_id: sheet.id, ops }, agent.token);
-  await sampleVideo(agent, task.session_id, sheet.id);
+  const drawing = await post("/draw", { sheet_id: sheet.id, ops }, agent.token);
+  if (!drawing.ok || drawing.inserted !== ops.length) throw new Error(`drawing was not fully saved (${drawing.inserted || 0}/${ops.length})`);
+  const media = await sampleVideo(agent, task.session_id, sheet.id);
+  await say(agent, task, "speak", "The labelled heat-pump diagram and its short animation are ready on the shared sheet. Start at outdoor air, follow the arrows through the compressor, then see heat released indoors.", { lang: "en", lesson: { sheet_id: sheet.id, media_id: media.media_id } });
   agent.done.add(key);
-  console.log("seat 9 → drew labelled heat-pump diagram");
+  console.log("seat 9 → verified labelled heat-pump diagram and linked lesson animation");
 }
 
 async function act(agent, inbox) {
   const task = inbox.task;
   if (!task?.your_turn) return;
-  const seat = agent.expectedSeat;
+  const seat = agent.seat;
   if (task.needed === "note") {
     if (task.phase === "research") await say(agent, task, "note", sourceNote(seat), { sources: seat >= 2 && seat <= 4 ? [seat === 3 ? "https://www.iea.org/reports/the-future-of-heat-pumps" : "https://www.energy.gov/energysaver/heat-pump-systems"] : [] });
     else if (seat === 8) {
@@ -142,13 +150,32 @@ async function act(agent, inbox) {
     if (!health.ok) throw new Error("health endpoint did not report ok");
     const session = await post("/session", { title: "Fake council acceptance run" });
     console.log(`session ${session.session_id}`);
-    // Sequential first claims prove the fixed-seat protocol deterministically.
-    for (const agent of agents) await claim(agent);
+    // Reclaim names that belong to the test. A live persistent worker is never
+    // displaced merely to make an acceptance run look pristine. In an empty
+    // classroom this still claims all ten roles; alongside live workers the
+    // available roles exercise the same protocol without hijacking them.
+    const activeAgents = [];
+    for (const agent of agents) {
+      try {
+        await claim(agent);
+        activeAgents.push(agent);
+      } catch (error) {
+        if (/all 10 seats are claimed and online/i.test(error.message)) {
+          console.log(`leaving live council seat(s) intact; ${agent.name} was not claimed`);
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (!activeAgents.length) {
+      console.log("fakecouncil skipped: all seats belong to live persistent workers.");
+      return;
+    }
     await post("/ask", { session_id: session.session_id, sheet_id: session.sheet_id, text: "Explain how a heat pump moves heat, including what COP means." });
     started = Date.now();
-    console.log(`question submitted; polling ten agents for up to ${runFor}s`);
+    console.log(`question submitted; polling ${activeAgents.length} test agent(s) for up to ${runFor}s`);
     while (Date.now() - started < runFor * 1000) {
-      const inboxes = await Promise.all(agents.map(async (agent) => {
+      const inboxes = await Promise.all(activeAgents.map(async (agent) => {
         try {
           const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}&last_seq=${agent.lastSeq}`);
           for (const message of inbox.since_last || []) agent.lastSeq = Math.max(agent.lastSeq, message.seq || 0);
@@ -156,7 +183,7 @@ async function act(agent, inbox) {
           return inbox;
         } catch (error) {
           errors++;
-          const note = `seat ${agent.expectedSeat} error: ${error.message}`;
+          const note = `seat ${agent.seat ?? agent.expectedSeat} error: ${error.message}`;
           errorNotes.push(note);
           console.error(note);
           return null;
