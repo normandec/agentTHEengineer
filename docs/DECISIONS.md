@@ -38,6 +38,7 @@
 - A learning upload is marked learned only after browser extraction successfully writes readable text and the Function indexes it. Unsupported or failed extraction remains an ordinary shared file instead of misleading the learner with a false learning-library status.
 - Board draw completion is durable, not conversational: the Function will not advance a draw task or emit a saved illustration event unless every requested operation is inserted. The viewer reloads a board when it receives that event and visibly reports an absent saved illustration.
 - Sheet video operations retain their DOM media element across canvas renders. A `speak` message that carries `meta.lesson.{sheet_id,media_id}` starts the matching sheet animation alongside its narration; the learner can also start the latest lesson manually.
+- A saved lesson will reference an ordered, durable timeline of narration messages and board-operation checkpoints rather than duplicate audio or drawing bytes. This makes incremental drawing and erasing replayable from the same append-only sheet history.
 
 ## Known boundaries
 
