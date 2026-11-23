@@ -83,6 +83,30 @@ async function artifact(agent, sessionId, name, mime, bytes, path) {
   const begin = await post("/file/begin", { session_id: sessionId, name, mime, bytes: bytes.length, path, task_id: null }, agent.token);
   await signedPut(begin.upload_url, begin.headers, bytes, mime); return post("/file/done", { file_id: begin.file_id }, agent.token);
 }
+async function officeArtifacts(agent, sessionId) {
+  const root = join(tmpdir(), `classroom-office-${process.pid}-${Date.now()}`);
+  const reportSource = `${root}.txt`, workbookSource = `${root}.csv`;
+  const report = `${root}.docx`, workbook = `${root}.xlsx`;
+  writeFileSync(reportSource, "# Heat pump summary\n\nA heat pump uses electricity to move heat. COP is heat delivered divided by electrical energy used.\n");
+  writeFileSync(workbookSource, "electricity_kwh,heat_kwh,cop\n1,3,=B2/A2\n");
+  const maker = join(__dirname, "make-office.py");
+  const commands = [
+    ["docx", "--input", reportSource, "--output", report, "--title", "Heat pump summary"],
+    ["xlsx", "--input", workbookSource, "--output", workbook, "--title", "Heat pump COP", "--sheet-name", "COP"],
+  ];
+  try {
+    for (const args of commands) {
+      const made = spawnSync("python3", [maker, ...args], { encoding: "utf8" });
+      if (made.status !== 0) throw new Error(`Office artifact generator failed: ${made.stderr || made.stdout}`);
+    }
+    const docx = readFileSync(report), xlsx = readFileSync(workbook);
+    if (!docx.subarray(0, 2).equals(Buffer.from("PK")) || !xlsx.subarray(0, 2).equals(Buffer.from("PK"))) throw new Error("Office artifact is not a valid package");
+    await artifact(agent, sessionId, "heat-pump-summary.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", docx, "outputs/reports");
+    await artifact(agent, sessionId, "heat-pump-cop.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", xlsx, "outputs/spreadsheets");
+  } finally {
+    for (const file of [reportSource, workbookSource, report, workbook]) try { unlinkSync(file); } catch (_) {}
+  }
+}
 async function sampleVideo(agent, sessionId, sheetId) {
   const out = join(tmpdir(), `classroom-fake-${process.pid}.mp4`);
   const made = spawnSync("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=0x17a2b8:s=320x180:d=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", out], { stdio: "ignore" });
@@ -155,7 +179,7 @@ async function act(agent, inbox) {
     else if (seat === 8) {
       await say(agent, task, "note", "Checked: COP = heat delivered / electric energy used. Example: 3 kWh / 1 kWh = COP 3. Units cancel, so the calculation is dimensionless. → OK.");
       const artifactKey = `${task.id}:calculator-artifacts`;
-      if (!agent.done.has(artifactKey)) { await artifact(agent, task.session_id, "cop-check.csv", "text/csv", Buffer.from("electricity_kwh,heat_kwh,cop\n1,3,3\n"), "outputs/csv"); await artifact(agent, task.session_id, "cop-plot.png", "image/png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3VwAAAABJRU5ErkJggg==", "base64"), "outputs/plots"); agent.done.add(artifactKey); }
+      if (!agent.done.has(artifactKey)) { await artifact(agent, task.session_id, "cop-check.csv", "text/csv", Buffer.from("electricity_kwh,heat_kwh,cop\n1,3,3\n"), "outputs/csv"); await officeArtifacts(agent, task.session_id); await artifact(agent, task.session_id, "cop-plot.png", "image/png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3VwAAAABJRU5ErkJggg==", "base64"), "outputs/plots"); agent.done.add(artifactKey); }
     }
     return;
   }

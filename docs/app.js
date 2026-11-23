@@ -147,7 +147,7 @@
     }
     if (deliberation.length) node.append(deliberationDetails(deliberation));
     const actions = document.createElement("div"); actions.className = "answer-actions";
-    [["👍","Helpful feedback"],["👎","Needs improvement"],["Explain simpler","Explain the last answer in simpler language."],["Go deeper","Go deeper on the last answer with sources."],["Study guide","Turn the last answer and relevant learning-library material into a concise study guide with key terms, retrieval questions, and sources."],["Flashcards","Create ten high-quality question-and-answer flashcards from the last answer and any relevant learned files."],["Practice","Create a graduated practice set from the last answer. Ask one question at a time and wait for my reply before revealing feedback."],["Teach it live","Create a saved, step-by-step lesson from the last answer. Start the lesson record first, then explain in short spoken chunks while the illustrator adds durable drawing steps between chunks. Include an erase or correction step only where it helps learning, and complete the saved lesson after its final recap."],["Draw it","Draw a clearer labelled explanation on the current sheet. Confirm the saved board operations before saying the drawing is complete."],["Animate it (Blender)","Create a short sheet-linked animation explaining the last answer, upload it, and publish a synchronized narration only after the video and board ops are saved."],["Quiz me on this","Quiz me with five questions about the last answer."],["Speak it","Speak a short summary of the last answer."]].forEach(([label,prompt]) => { const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=> { if(label==="👍"||label==="👎") post("/feedback",{session_id:state.sessionId,task_id:final.meta?.task_id,rating:label==="👍"?1:-1,body:prompt}).then(()=>toast("Feedback shared with the council.")); else ask(prompt); }); actions.append(b); });
+    [["👍","Helpful feedback"],["👎","Needs improvement"],["Explain simpler","Explain the last answer in simpler language."],["Go deeper","Go deeper on the last answer with sources."],["Study guide","Turn the last answer and relevant learning-library material into a concise study guide with key terms, retrieval questions, and sources."],["Excel workbook","Create a real downloadable .xlsx workbook from the last answer. Use meaningful sheet names, headers, formulas where useful, and upload it to outputs/spreadsheets; do not rename a CSV as Excel."],["Word document","Create a real downloadable .docx report from the last answer with a title, clear sections, sources, and a filename in outputs/reports."],["File pack","Create the most useful downloadable deliverables for the last answer. You may publish real DOCX, XLSX, PDF, PPTX, CSV, code, images, models, audio, archives, or other valid file types; upload each to a sensible outputs folder and list the filenames."],["Flashcards","Create ten high-quality question-and-answer flashcards from the last answer and any relevant learned files."],["Practice","Create a graduated practice set from the last answer. Ask one question at a time and wait for my reply before revealing feedback."],["Teach it live","Create a saved, step-by-step lesson from the last answer. Start the lesson record first, then explain in short spoken chunks while the illustrator adds durable drawing steps between chunks. Include an erase or correction step only where it helps learning, and complete the saved lesson after its final recap."],["Draw it","Draw a clearer labelled explanation on the current sheet. Confirm the saved board operations before saying the drawing is complete."],["Animate it (Blender)","Create a short sheet-linked animation explaining the last answer, upload it, and publish a synchronized narration only after the video and board ops are saved."],["Quiz me on this","Quiz me with five questions about the last answer."],["Speak it","Speak a short summary of the last answer."]].forEach(([label,prompt]) => { const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=> { if(label==="👍"||label==="👎") post("/feedback",{session_id:state.sessionId,task_id:final.meta?.task_id,rating:label==="👍"?1:-1,body:prompt}).then(()=>toast("Feedback shared with the council.")); else ask(prompt); }); actions.append(b); });
     node.append(actions); addCopyButtons(node);
     return node;
   }
@@ -319,6 +319,20 @@
     } catch (_) { /* Asset lists are supplemental; polling chat still works without them. */ }
   }
   function humanBytes(bytes) { const n=Number(bytes)||0; return n < 1024*1024 ? `${Math.round(n/1024)} KB` : `${(n/1024/1024).toFixed(1)} MB`; }
+  function filePresentation(file) {
+    const name = String(file?.name || "").toLowerCase(), mime = String(file?.mime || "").toLowerCase();
+    const extension = name.includes(".") ? name.split(".").pop() : "";
+    if (["xlsx", "xls", "ods", "csv"].includes(extension) || /spreadsheet|excel|csv/.test(mime)) return { icon: "▦", label: extension === "csv" ? "Spreadsheet data" : "Workbook" };
+    if (["docx", "doc", "odt", "rtf"].includes(extension) || /word|document|rtf/.test(mime)) return { icon: "▤", label: "Document" };
+    if (["pptx", "ppt", "odp"].includes(extension) || /presentation|powerpoint/.test(mime)) return { icon: "▧", label: "Presentation" };
+    if (extension === "pdf" || mime === "application/pdf") return { icon: "▣", label: "PDF" };
+    if (/^image\//.test(mime)) return { icon: "▧", label: "Image" };
+    if (/^audio\//.test(mime)) return { icon: "♪", label: "Audio" };
+    if (/^video\//.test(mime)) return { icon: "▶", label: "Video" };
+    if (["zip", "7z", "rar", "tar", "gz"].includes(extension)) return { icon: "▤", label: "Archive" };
+    if (["py", "js", "ts", "html", "css", "json", "md", "ipynb", "ino"].includes(extension)) return { icon: "⌘", label: "Code or data" };
+    return { icon: "📄", label: "File" };
+  }
   function renderAssets() {
     els.filesCount.textContent = state.files.length;
     const learned = state.files.filter((file) => file.learned);
@@ -334,8 +348,8 @@
     if (!currentFiles.length) list.innerHTML = `<p class="eyebrow">No files in this folder</p>`;
     for (const file of currentFiles) {
       const row = document.createElement("article"); row.className = "file-item";
-      const icon = file.learned ? "📚" : "📄", learning = file.learned ? "In learning library" : "Available to this conversation";
-      row.innerHTML = `<span>${icon}</span><div><b>${escapeHtml(file.name)}</b><small>${humanBytes(file.bytes)} · ${escapeHtml(file.author || "You")} · ${learning}</small></div><a href="${escapeHtml(file.url || "#")}" target="_blank" download>⇩</a>`;
+      const type = filePresentation(file), icon = file.learned ? "📚" : type.icon, learning = file.learned ? "In learning library" : "Available to this conversation";
+      row.innerHTML = `<span>${icon}</span><div><b>${escapeHtml(file.name)}</b><small>${escapeHtml(type.label)} · ${humanBytes(file.bytes)} · ${escapeHtml(file.author || "You")} · ${learning}</small></div><a href="${escapeHtml(file.url || "#")}" target="_blank" download>⇩</a>`;
       const learn = document.createElement("button"); learn.type = "button"; learn.textContent = file.learned ? "Remove learning" : "Add to learning";
       learn.addEventListener("click", async () => { try { await post("/file/learn", { file_id: file.id, learned: !file.learned }); await refreshAssets(); toast(file.learned ? "Removed from the learning library." : "Added to the learning library."); } catch (error) { toast(error.message); } });
       const move = document.createElement("button"); move.type = "button"; move.textContent = "Move";

@@ -60,7 +60,7 @@ https://normandec.github.io/agentTHEengineer/
 
 Temporary endpoint testing: append `?api=https://OTHER_PROJECT.supabase.co/functions/v1/classroom` to the Pages URL. No secret is exposed.
 
-The viewer includes full/quick/debate modes, dark appearance, focus chat and full-screen board reading, live board replay/minimap, sticky notes, highlights, laser pointers, verified saved-illustration status, shared folders, dedicated learning-library uploads/search, media embedding, language-aware voice replay/skip, and a **Lessons** drawer. A saved lesson replays the original short narration chunks and durable illustration/erase checkpoints in order, while live lesson batches appear gently as the council explains. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
+The viewer includes full/quick/debate modes, dark appearance, focus chat and full-screen board reading, live board replay/minimap, sticky notes, highlights, laser pointers, verified saved-illustration status, shared folders, dedicated learning-library uploads/search, media embedding, language-aware voice replay/skip, and a **Lessons** drawer. A saved lesson replays the original short narration chunks and durable illustration/erase checkpoints in order, while live lesson batches appear gently as the council explains. The Files drawer accepts every MIME type up to 100 MB and distinguishes common workbooks, documents, presentations, PDFs, archives, code, and media. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
 
 ## 4. Keep a connected agent alive
 
@@ -75,7 +75,18 @@ export AI_CLASSROOM_WORKER='/absolute/path/to/your-worker-adapter'
 
 The adapter reads the long-poll inbox JSON from stdin, completes one required action, and returns. `agent-runner.sh` deliberately never returns on a healthy run; it immediately goes back to `GET /inbox?wait=20`. Do not write a conversational “I am waiting” response in place of this process. If the host cannot preserve a process after a turn, configure its scheduled/background-worker equivalent and be honest about that limitation.
 
-## 5. Optional Dropbox archive mirror
+## 5. Create portable Office artifacts
+
+Council workers may use their installed authoring tools (for example, `python-docx`, `openpyxl`, Pandoc, or a spreadsheet library) and then follow the signed `/file/begin` → PUT → `/file/done` protocol. The repository also includes a dependency-free fallback for real Office packages:
+
+```bash
+python3 tools/make-office.py docx --input report.txt --output outputs/report.docx --title "Council report"
+python3 tools/make-office.py xlsx --input data.csv --output outputs/data.xlsx --title "Council data" --sheet-name Data
+```
+
+It produces true DOCX/XLSX zip packages rather than files with renamed extensions. Other valid formats—including PDF, PPTX, code, data, SVG, 3D, audio, and archives—are published through the same generic file protocol, subject to the 100 MB limit.
+
+## 6. Optional Dropbox archive mirror
 
 `GET /export?session_id=...&admin=...` creates a ZIP containing transcript, `MEMORY.md`, task deliberation documents, sheet PNGs, saved lesson timelines, and a manifest. The mirror utility additionally mirrors the session’s files/media:
 

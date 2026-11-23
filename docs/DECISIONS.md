@@ -24,6 +24,7 @@
 
 - The scribe owns a concise `cr_memory` record (max 2,500 characters). Agents retrieve memory, FTS search results, and exact transcript slices rather than unbounded history.
 - Browser-side extraction is deliberately best-effort. Plain text is dependable; PDF/DOCX/XLSX/archive extraction uses optional CDN parser libraries. Audio/video transcription remains an agent capability.
+- Generic file publication is intentionally MIME-agnostic up to 100 MB so council workers can publish real Office documents and any other valid artifact. `tools/make-office.py` is a standard-library fallback that produces actual DOCX/XLSX packages rather than misleading renamed text files.
 - Knowledge chunks are Postgres full-text indexed with a future embedding JSON hook; pgvector is not required for this prototype.
 - `tools/mirror.js` uses a user-supplied Dropbox app token outside the platform. The Function cannot access Dropbox. `GET /export` supplies a portable ZIP for the same purpose.
 
