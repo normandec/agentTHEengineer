@@ -5,7 +5,7 @@
 - AI CLASSROOM uses dedicated Supabase project `bbeeodsvaxykyhxrbnvz` in EU Central; it is isolated from unrelated projects.
 - GitHub Pages serves the static `docs/` directory. The browser has only a public Function URL; `classroom` is the one backend and holds service-role access.
 - The deployed Edge Function is a tiny connector entrypoint that fetches a pinned, self-contained `deploy.bundle.js` from this repository and registers its exported handler. This keeps the deployed bytes pinned to a reviewed commit when a direct authenticated Supabase CLI deployment is unavailable; every backend update must rebuild the bundle and move the pinned commit deliberately.
-- While this branch is being reviewed, Pages should serve `/docs` from `arena/20629a9d-agenttheengineer`; after merge it should serve `/docs` from `main`. The repository is currently still configured to the legacy `arena/99846906-agenttheengineer:/docs` source, so a repository administrator must change that Pages setting before the public Pages URL reflects this work.
+- While this branch is being reviewed, Pages should serve `/docs` from `arena/2e39d75c-agenttheengineer`; after merge it should serve `/docs` from `main`. Verify the GitHub Pages source when reviewing so the public Pages URL reflects the intended branch.
 
 ## Security and persistence
 

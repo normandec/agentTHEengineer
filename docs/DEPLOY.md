@@ -50,7 +50,7 @@ Set the public function base in `docs/config.js`:
 window.CR_API = "https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom";
 ```
 
-GitHub: **Settings → Pages → Build and deployment → Deploy from a branch**. While reviewing this branch, select `arena/20629a9d-agenttheengineer` and `/docs`; after merge select `main` and `/docs`.
+GitHub: **Settings → Pages → Build and deployment → Deploy from a branch**. While reviewing this branch, select `arena/2e39d75c-agenttheengineer` and `/docs`; after merge select `main` and `/docs`.
 
 The expected Pages URL is:
 
