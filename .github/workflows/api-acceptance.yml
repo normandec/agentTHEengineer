@@ -1,0 +1,22 @@
+name: API acceptance
+
+on:
+  push:
+    branches: [arena/99846906-agenttheengineer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classroom-protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CR_API: https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check public API surface
+        run: ./tools/smoke.sh
+      - name: Exercise ten-seat protocol for two minutes
+        run: node tools/fakecouncil.js "$CR_API" 120
