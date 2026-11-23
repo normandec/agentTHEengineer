@@ -74,7 +74,7 @@ supabase functions deploy classroom --no-verify-jwt
 
 export CR_API='https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom'
 ./tools/smoke.sh
-node tools/fakecouncil.js "$CR_API" 120
+node tools/fakecouncil.js "$CR_API" 240
 ```
 
 The fake council calibrates, researches, drafts, critiques, verifies, revises, votes, posts a final, then records a saved step-by-step lesson with narrated drawing, an erase/correction checkpoint, a real DOCX report, a real XLSX workbook, calculator artifacts, and a three-second MP4 upload. It exits non-zero if the final, drawing, durable lesson timeline, or Office artifact generation is absent.

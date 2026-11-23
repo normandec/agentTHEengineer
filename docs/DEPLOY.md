@@ -39,7 +39,7 @@ export CR_API='https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom'
 curl -i "$CR_API/health"
 curl -s "$CR_API/prompt" | wc -c   # <= 9000
 ./tools/smoke.sh
-node tools/fakecouncil.js "$CR_API" 120
+node tools/fakecouncil.js "$CR_API" 240
 ```
 
 ## 3. Publish the static viewer
@@ -105,7 +105,7 @@ supabase db push
 supabase functions deploy classroom --no-verify-jwt
 curl -fsS "$CR_API/health"
 ./tools/smoke.sh
-node tools/fakecouncil.js "$CR_API" 120
+node tools/fakecouncil.js "$CR_API" 240
 ```
 
 No frontend build command is needed. Commit and push `docs/` changes for Pages to publish them.
