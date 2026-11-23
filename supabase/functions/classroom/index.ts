@@ -1025,7 +1025,10 @@ export async function handler(req: Request) {
         const free = seats.find((s: any) => !s.token);
         const stale = seats.find((s: any) => s.token && (!s.last_seen || Date.now() - new Date(s.last_seen).getTime() > ONLINE_WINDOW_MS));
         const mine = seats.find((s: any) => s.agent_name === name);
-        const target = free ?? stale ?? mine;
+        // A durable worker reconnects with the same name. Reclaim its existing
+        // seat before considering an unused one, or reconnects silently drift
+        // through the council and leave their former seat behind.
+        const target = mine ?? free ?? stale;
         if (!target) return err("all 10 seats are claimed and online — try again later", 409);
         const token = crypto.randomUUID();
         const baseProfile = profileOf(target);
@@ -1037,7 +1040,8 @@ export async function handler(req: Request) {
         let update = sb.from("cr_seats").update({
           token, agent_name: name, claimed_at: nowISO(), last_seen: nowISO(), status: "idle", profile: declared,
         }).eq("seat", target.seat);
-        if (free) update = update.is("token", null);
+        if (mine && target.seat === mine.seat) update = update.eq("agent_name", name);
+        else if (free && target.seat === free.seat) update = update.is("token", null);
         else if (stale && target.seat === stale.seat) update = update.eq("token", stale.token);
         else update = update.eq("agent_name", name);
         const { data, error } = await update.select().maybeSingle();

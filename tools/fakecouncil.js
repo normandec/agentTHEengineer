@@ -23,7 +23,7 @@ const { tmpdir } = require("node:os");
 const { join } = require("node:path");
 let errors = 0;
 const errorNotes = [];
-const agents = Array.from({ length: 10 }, (_, n) => ({ expectedSeat: n + 1, name: `fakecouncil-seat-${n + 1}`, token: null, lastSeq: 0, done: new Set() }));
+const agents = Array.from({ length: 10 }, (_, n) => ({ expectedSeat: n + 1, seat: null, name: `fakecouncil-seat-${n + 1}`, token: null, lastSeq: 0, done: new Set() }));
 
 async function request(path, options = {}) {
   const response = await fetch(base + path, {
@@ -59,7 +59,10 @@ function finalAnswer() {
 async function claim(agent) {
   const claimed = await post("/claim", { name: agent.name });
   agent.token = claimed.token;
-  if (claimed.seat !== agent.expectedSeat) throw new Error(`${agent.name} claimed seat ${claimed.seat}, expected ${agent.expectedSeat}`);
+  agent.seat = claimed.seat;
+  // Seats may already be occupied by a long-lived classroom worker. The
+  // acceptance council follows its actual role instead of assuming a pristine
+  // database or misrepresenting a role after a reclaim.
   const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}`);
   if (inbox.calibration) await post("/calibrate", { answers: inbox.calibration.questions.map((q) => ({ id: q.id, answer: "" })), strengths: ["clear explanations"], weaknesses: ["long arithmetic"] }, agent.token);
   console.log(`claimed and calibrated seat ${claimed.seat} (${claimed.role})`);
@@ -69,7 +72,7 @@ async function say(agent, task, kind, body, meta = {}) {
   if (agent.done.has(key)) return;
   await post("/say", { task_id: task.id, kind, body, meta: { ...meta, round: task.round } }, agent.token);
   agent.done.add(key);
-  console.log(`seat ${agent.expectedSeat} → ${kind} (${task.phase}, round ${task.round})`);
+  console.log(`seat ${agent.seat} → ${kind} (${task.phase}, round ${task.round})`);
 }
 async function signedPut(uploadUrl, headers, bytes, mime) {
   const response = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": mime, ...(headers || {}) }, body: bytes });
@@ -118,7 +121,7 @@ async function draw(agent, task, sheet) {
 async function act(agent, inbox) {
   const task = inbox.task;
   if (!task?.your_turn) return;
-  const seat = agent.expectedSeat;
+  const seat = agent.seat;
   if (task.needed === "note") {
     if (task.phase === "research") await say(agent, task, "note", sourceNote(seat), { sources: seat >= 2 && seat <= 4 ? [seat === 3 ? "https://www.iea.org/reports/the-future-of-heat-pumps" : "https://www.energy.gov/energysaver/heat-pump-systems"] : [] });
     else if (seat === 8) {
@@ -160,7 +163,7 @@ async function act(agent, inbox) {
           return inbox;
         } catch (error) {
           errors++;
-          const note = `seat ${agent.expectedSeat} error: ${error.message}`;
+          const note = `seat ${agent.seat ?? agent.expectedSeat} error: ${error.message}`;
           errorNotes.push(note);
           console.error(note);
           return null;

@@ -7912,7 +7912,7 @@ Sources: ${src.map((u) => `<${u}>`).join(", ")}` : ""
           const free = seats.find((s) => !s.token);
           const stale = seats.find((s) => s.token && (!s.last_seen || Date.now() - new Date(s.last_seen).getTime() > ONLINE_WINDOW_MS));
           const mine = seats.find((s) => s.agent_name === name);
-          const target = free ?? stale ?? mine;
+          const target = mine ?? free ?? stale;
           if (!target) return err("all 10 seats are claimed and online \u2014 try again later", 409);
           const token = crypto.randomUUID();
           const baseProfile = profileOf(target);
@@ -7929,7 +7929,8 @@ Sources: ${src.map((u) => `<${u}>`).join(", ")}` : ""
             status: "idle",
             profile: declared
           }).eq("seat", target.seat);
-          if (free) update = update.is("token", null);
+          if (mine && target.seat === mine.seat) update = update.eq("agent_name", name);
+          else if (free && target.seat === free.seat) update = update.is("token", null);
           else if (stale && target.seat === stale.seat) update = update.eq("token", stale.token);
           else update = update.eq("agent_name", name);
           const { data, error } = await update.select().maybeSingle();
