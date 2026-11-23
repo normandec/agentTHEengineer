@@ -148,7 +148,7 @@
     </section>
     <div class="settings-actions"><button id="export-session" class="button outline" type="button">Download session ZIP</button><button id="refresh-stats" class="button quiet" type="button">Refresh</button></div>
   </dialog>
-  <div id="drop-zone" class="drop-zone" hidden><div><strong>Drop files into this classroom</strong><br><small>Any format · up to 100 MB · attach or learn</small></div></div>
+  <div id="drop-zone" class="drop-zone" hidden role="dialog" aria-modal="true" aria-label="File drop target"><div><strong>Drop files into this classroom</strong><br><small>Any format · up to 100 MB · attach or learn</small><button id="cancel-drop" type="button">Cancel</button></div></div>
   <div id="upload-queue" class="upload-queue"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
