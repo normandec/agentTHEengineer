@@ -31,7 +31,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set +e
-          node tools/fakecouncil.js "$CR_API" 150 > /tmp/fakecouncil.log 2>&1
+          # Long-polling live workers may take up to one poll interval to observe
+          # each phase transition, so leave enough time for the entire drawn lesson.
+          node tools/fakecouncil.js "$CR_API" 240 > /tmp/fakecouncil.log 2>&1
           result=$?
           cat /tmp/fakecouncil.log
           description="$(grep -E 'fakecouncil finished|No final|No drawing|completed cleanly|setup error' /tmp/fakecouncil.log | tail -1 | tr '\n' ' ' | tr -cd '[:print:]' | cut -c1-130)"
