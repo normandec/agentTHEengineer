@@ -2,8 +2,9 @@
 /*
  * A deterministic polling council for an API smoke test.
  * Usage: node tools/fakecouncil.js <API_URL> [seconds]
- * It creates a session, claims all ten seats, asks a sample question, then
- * follows the same /inbox -> /say|/draw loop a real agent uses.
+ * It creates a session, reclaims its available test seats, asks a sample
+ * question, then follows the same /inbox -> /say|/draw loop a real agent uses.
+ * Live named classroom workers keep their own seats; the test never evicts them.
  */
 "use strict";
 
@@ -149,13 +150,32 @@ async function act(agent, inbox) {
     if (!health.ok) throw new Error("health endpoint did not report ok");
     const session = await post("/session", { title: "Fake council acceptance run" });
     console.log(`session ${session.session_id}`);
-    // Sequential first claims prove the fixed-seat protocol deterministically.
-    for (const agent of agents) await claim(agent);
+    // Reclaim names that belong to the test. A live persistent worker is never
+    // displaced merely to make an acceptance run look pristine. In an empty
+    // classroom this still claims all ten roles; alongside live workers the
+    // available roles exercise the same protocol without hijacking them.
+    const activeAgents = [];
+    for (const agent of agents) {
+      try {
+        await claim(agent);
+        activeAgents.push(agent);
+      } catch (error) {
+        if (/all 10 seats are claimed and online/i.test(error.message)) {
+          console.log(`leaving live council seat(s) intact; ${agent.name} was not claimed`);
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (!activeAgents.length) {
+      console.log("fakecouncil skipped: all seats belong to live persistent workers.");
+      return;
+    }
     await post("/ask", { session_id: session.session_id, sheet_id: session.sheet_id, text: "Explain how a heat pump moves heat, including what COP means." });
     started = Date.now();
-    console.log(`question submitted; polling ten agents for up to ${runFor}s`);
+    console.log(`question submitted; polling ${activeAgents.length} test agent(s) for up to ${runFor}s`);
     while (Date.now() - started < runFor * 1000) {
-      const inboxes = await Promise.all(agents.map(async (agent) => {
+      const inboxes = await Promise.all(activeAgents.map(async (agent) => {
         try {
           const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}&last_seq=${agent.lastSeq}`);
           for (const message of inbox.since_last || []) agent.lastSeq = Math.max(agent.lastSeq, message.seq || 0);
