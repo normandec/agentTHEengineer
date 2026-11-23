@@ -657,7 +657,7 @@ async function buildInbox(seat, lastSeq, seenSheetSeq) {
     latest_seq: sinceLast.length ? sinceLast[sinceLast.length - 1].seq : lastSeq
   };
 }
-Deno.serve(async (req) => {
+async function handler(req) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
   const segs = routePath(url);
@@ -1327,4 +1327,8 @@ ${m.body}`).join("\n\n")) });
     console.error("classroom error", e);
     return json({ error: "internal error: " + (e?.message ?? String(e)) }, 500);
   }
-});
+}
+if (import.meta.main) Deno.serve(handler);
+export {
+  handler
+};

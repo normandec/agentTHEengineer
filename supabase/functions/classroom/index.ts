@@ -644,7 +644,7 @@ async function buildInbox(seat: any, lastSeq: number, seenSheetSeq: number) {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
-Deno.serve(async (req) => {
+export async function handler(req: Request) {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   const url = new URL(req.url);
   const segs = routePath(url);
@@ -1264,4 +1264,9 @@ Deno.serve(async (req) => {
     console.error("classroom error", e);
     return json({ error: "internal error: " + (e?.message ?? String(e)) }, 500);
   }
-});
+
+}
+
+// When this file is deployed directly, it is its own entrypoint. The connector
+// wrapper imports the exported handler and registers it in the entry module.
+if (import.meta.main) Deno.serve(handler);
