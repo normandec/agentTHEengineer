@@ -90,6 +90,43 @@ create table if not exists cr_ops (
 );
 create index if not exists cr_ops_sheet_seq_idx on cr_ops (sheet_id, seq);
 
+-- A lesson records references to durable narration and board ranges. It never
+-- duplicates speech or canvas bytes, so progressive draw and erase steps replay
+-- from the same append-only sheet history the classroom already trusts.
+create table if not exists cr_lessons (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references cr_sessions(id) on delete cascade,
+  sheet_id uuid not null references cr_sheets(id) on delete cascade,
+  task_id uuid references cr_tasks(id) on delete set null,
+  title text not null,
+  summary text not null default '',
+  author text not null default 'council',
+  status text not null default 'recording', -- recording | complete
+  base_op_seq int not null default 0,
+  step_count int not null default 0,
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+create index if not exists cr_lessons_session_idx on cr_lessons(session_id, created_at desc);
+
+create table if not exists cr_lesson_steps (
+  id bigserial primary key,
+  lesson_id uuid not null references cr_lessons(id) on delete cascade,
+  step_no int not null,
+  kind text not null, -- narrate | draw | erase | media
+  message_id bigint references cr_messages(id) on delete set null,
+  sheet_id uuid references cr_sheets(id) on delete set null,
+  op_from int,
+  op_to int,
+  body text not null default '',
+  meta jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  unique(lesson_id, step_no)
+);
+create index if not exists cr_lesson_steps_lesson_idx on cr_lesson_steps(lesson_id, step_no);
+
 -- Partial human strokes are intentionally ephemeral. The final compact path goes to cr_ops.
 create table if not exists cr_live_strokes (
   sheet_id uuid not null references cr_sheets(id) on delete cascade,
@@ -198,6 +235,8 @@ alter table cr_seats enable row level security;
 alter table cr_tasks enable row level security;
 alter table cr_sheets enable row level security;
 alter table cr_ops enable row level security;
+alter table cr_lessons enable row level security;
+alter table cr_lesson_steps enable row level security;
 alter table cr_live_strokes enable row level security;
 alter table cr_memory enable row level security;
 alter table cr_media enable row level security;

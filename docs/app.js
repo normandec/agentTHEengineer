@@ -9,9 +9,9 @@
   // never committed or persisted; it is forwarded only to the configured Function.
   const ADMIN_KEY = pageParams.get("admin") || "";
   const storageKey = `ai-classroom-session:${API}`;
-  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null, chatRenderKey: null, forceChatFollow: false, chatFocused: false, boardFocused: false, pendingLesson: null };
+  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, lessons: [], council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null, chatRenderKey: null, forceChatFollow: false, chatFocused: false, boardFocused: false, pendingLesson: null, lessonPlayback: null };
   const els = {
-    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), boardStatus: $("#board-status"), boardFocus: $("#board-fullscreen-button"), playLesson: $("#play-lesson"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), knowledgeSummary: $("#knowledge-summary"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), knowledgeInput: $("#knowledge-input"), libraryKnowledgeInput: $("#library-knowledge-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count")
+    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), boardStatus: $("#board-status"), boardFocus: $("#board-fullscreen-button"), playLesson: $("#play-lesson"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), lessonsList: $("#lessons-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), knowledgeSummary: $("#knowledge-summary"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), knowledgeInput: $("#knowledge-input"), libraryKnowledgeInput: $("#library-knowledge-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count"), lessonsCount: $("#lessons-count")
   };
 
   function api(path, options = {}) {
@@ -147,7 +147,7 @@
     }
     if (deliberation.length) node.append(deliberationDetails(deliberation));
     const actions = document.createElement("div"); actions.className = "answer-actions";
-    [["👍","Helpful feedback"],["👎","Needs improvement"],["Explain simpler","Explain the last answer in simpler language."],["Go deeper","Go deeper on the last answer with sources."],["Study guide","Turn the last answer and relevant learning-library material into a concise study guide with key terms, retrieval questions, and sources."],["Flashcards","Create ten high-quality question-and-answer flashcards from the last answer and any relevant learned files."],["Practice","Create a graduated practice set from the last answer. Ask one question at a time and wait for my reply before revealing feedback."],["Draw it","Draw a clearer labelled explanation on the current sheet. Confirm the saved board operations before saying the drawing is complete."],["Animate it (Blender)","Create a short sheet-linked animation explaining the last answer, upload it, and publish a synchronized narration only after the video and board ops are saved."],["Quiz me on this","Quiz me with five questions about the last answer."],["Speak it","Speak a short summary of the last answer."]].forEach(([label,prompt]) => { const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=> { if(label==="👍"||label==="👎") post("/feedback",{session_id:state.sessionId,task_id:final.meta?.task_id,rating:label==="👍"?1:-1,body:prompt}).then(()=>toast("Feedback shared with the council.")); else ask(prompt); }); actions.append(b); });
+    [["👍","Helpful feedback"],["👎","Needs improvement"],["Explain simpler","Explain the last answer in simpler language."],["Go deeper","Go deeper on the last answer with sources."],["Study guide","Turn the last answer and relevant learning-library material into a concise study guide with key terms, retrieval questions, and sources."],["Flashcards","Create ten high-quality question-and-answer flashcards from the last answer and any relevant learned files."],["Practice","Create a graduated practice set from the last answer. Ask one question at a time and wait for my reply before revealing feedback."],["Teach it live","Create a saved, step-by-step lesson from the last answer. Start the lesson record first, then explain in short spoken chunks while the illustrator adds durable drawing steps between chunks. Include an erase or correction step only where it helps learning, and complete the saved lesson after its final recap."],["Draw it","Draw a clearer labelled explanation on the current sheet. Confirm the saved board operations before saying the drawing is complete."],["Animate it (Blender)","Create a short sheet-linked animation explaining the last answer, upload it, and publish a synchronized narration only after the video and board ops are saved."],["Quiz me on this","Quiz me with five questions about the last answer."],["Speak it","Speak a short summary of the last answer."]].forEach(([label,prompt]) => { const b=document.createElement("button"); b.type="button"; b.textContent=label; b.addEventListener("click",()=> { if(label==="👍"||label==="👎") post("/feedback",{session_id:state.sessionId,task_id:final.meta?.task_id,rating:label==="👍"?1:-1,body:prompt}).then(()=>toast("Feedback shared with the council.")); else ask(prompt); }); actions.append(b); });
     node.append(actions); addCopyButtons(node);
     return node;
   }
@@ -178,8 +178,9 @@
   function speakCard(message) {
     const card = document.createElement("article"); card.className = "message speak-card";
     const linkedMedia = message.meta?.media_id || message.meta?.media_url || message.meta?.lesson?.media_id || message.meta?.lesson?.media_url;
-    card.innerHTML = `<span>🔊</span><div><b>${escapeHtml(message.author || "Council")}</b><p>${escapeHtml(message.body)}</p></div><button type="button">${linkedMedia ? "Play lesson" : "Replay"}</button>`;
-    card.querySelector("button").addEventListener("click", () => linkedMedia ? playLesson(message) : voice.replay(message.body, message.meta));
+    const lessonId = lessonIdReference(message);
+    card.innerHTML = `<span>🔊</span><div><b>${escapeHtml(message.author || "Council")}</b><p>${escapeHtml(message.body)}</p></div><button type="button">${lessonId ? "Open lesson" : linkedMedia ? "Play lesson" : "Replay"}</button>`;
+    card.querySelector("button").addEventListener("click", () => lessonId ? playSavedLesson(lessonId) : linkedMedia ? playLesson(message) : voice.replay(message.body, message.meta));
     return card;
   }
 
@@ -276,6 +277,25 @@
       const thumbnail = sheet.thumb_url || sheet.png_url;
       b.innerHTML = `<span class="sheet-thumb" ${thumbnail ? `style="background-image:url('${thumbnail}')"` : ""}>${thumbnail ? "" : "✦"}</span><span><h3>${escapeHtml(sheet.title)}</h3><p>Sheet ${sheet.idx} · ${new Date(sheet.created_at).toLocaleDateString()}</p></span>`;
       b.addEventListener("click", () => { openSheet(sheet.id); closeDrawer(); }); els.sheetsList.append(b);
+    }
+  }
+
+  function renderLessons() {
+    els.lessonsCount.textContent = state.lessons.length;
+    els.lessonsList.innerHTML = "";
+    if (!state.lessons.length) {
+      els.lessonsList.innerHTML = `<section class="lesson-empty"><span>▶</span><div><b>No saved lessons yet</b><p>Ask the council to turn an answer into a step-by-step lesson. Its explanation, drawing, and erasing sequence will appear here.</p></div></section>`;
+      return;
+    }
+    for (const lesson of state.lessons) {
+      const card = document.createElement("article"); card.className = "lesson-item";
+      const status = lesson.status === "complete" ? "Saved" : "Recording";
+      const date = lesson.completed_at || lesson.updated_at || lesson.created_at;
+      card.innerHTML = `<div class="lesson-item-head"><span class="lesson-play-mark">▶</span><div><b>${escapeHtml(lesson.title)}</b><small>${escapeHtml(status)} · ${Number(lesson.step_count || 0)} step${Number(lesson.step_count || 0) === 1 ? "" : "s"} · ${date ? new Date(date).toLocaleDateString() : ""}</small></div></div>${lesson.summary ? `<p>${escapeHtml(text(lesson.summary, 280))}</p>` : ""}<div class="lesson-item-actions"><button type="button">Play lesson</button><button type="button" class="lesson-sheet">Open sheet</button></div>`;
+      const [play, sheet] = card.querySelectorAll("button");
+      play.addEventListener("click", () => playSavedLesson(lesson.id));
+      sheet.addEventListener("click", async () => { try { await openSheet(lesson.sheet_id); closeDrawer(); } catch (error) { toast(`Could not open lesson sheet: ${error.message}`); } });
+      els.lessonsList.append(card);
     }
   }
 
@@ -389,7 +409,7 @@
     return (data.ops || []).length > 0;
   }
   async function pollOps() {
-    if (state.opsPolling || !state.activeSheet) return;
+    if (state.opsPolling || state.lessonPlayback || !state.activeSheet) return;
     state.opsPolling = true;
     try {
       const data = await api(`/sheet/${state.activeSheet.id}/ops?since=${board.maxSeq()}`);
@@ -409,6 +429,9 @@
       if (!hasOps) {
         els.boardStatus.textContent = "Illustration was not saved";
         toast("The council reported a drawing, but no saved board marks arrived. It must retry before claiming completion.", 6500);
+      } else if (message.meta?.lesson_id) {
+        const action = message.meta?.lesson_action === "erase" ? "erase" : "drawing";
+        els.boardStatus.textContent = `Saved lesson step ${message.meta?.lesson_step || ""}: ${action}`.trim();
       }
     } catch (_) { els.boardStatus.textContent = "Could not verify the illustration"; }
   }
@@ -428,10 +451,69 @@
     if (narration?.body) voice.replay(narration.body, narration.meta || {});
     if (started) els.boardStatus.textContent = "Playing explanation with sheet animation";
   }
+  const pause = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+  function lessonIdReference(message) {
+    const lesson = message?.meta?.lesson || {};
+    return lesson.lesson_id || lesson.id || message?.meta?.lesson_id || "";
+  }
+  function stopLessonPlayback() {
+    if (!state.lessonPlayback) return;
+    state.lessonPlayback.cancelled = true;
+    state.lessonPlayback = null;
+    board.stopReplay();
+  }
+  async function playSavedLesson(lessonId) {
+    stopLessonPlayback();
+    const playback = { id: String(lessonId), cancelled: false };
+    state.lessonPlayback = playback;
+    try {
+      const data = await api(`/lesson/${encodeURIComponent(lessonId)}`);
+      if (playback.cancelled || state.lessonPlayback !== playback) return;
+      const lesson = data.lesson, sheetData = await api(`/sheet/${encodeURIComponent(lesson.sheet_id)}`);
+      if (playback.cancelled || state.lessonPlayback !== playback) return;
+      state.activeSheet = sheetData.sheet;
+      const knownSheet = state.sheets.find((sheet) => sheet.id === lesson.sheet_id);
+      if (knownSheet) Object.assign(knownSheet, sheetData.sheet);
+      else state.sheets.push(sheetData.sheet);
+      const rows = (sheetData.ops || []).sort((a, b) => Number(a.seq) - Number(b.seq));
+      board.setRows(rows.filter((row) => Number(row.seq) <= Number(lesson.base_op_seq || 0)));
+      board.setLivePointer(sheetData.sheet.state?.pointer || null);
+      els.sheetName.textContent = sheetData.sheet.title;
+      els.sync.textContent = "lesson replay";
+      renderSheets();
+      closeDrawer();
+      const steps = (data.steps || []).sort((a, b) => Number(a.step_no) - Number(b.step_no));
+      if (!steps.length) { toast("This saved lesson has no recorded steps yet."); return; }
+      for (const step of steps) {
+        if (playback.cancelled || state.lessonPlayback !== playback) return;
+        const label = step.kind === "erase" ? "erasing" : step.kind === "draw" ? "drawing" : step.kind === "narrate" ? "explaining" : "playing";
+        els.boardStatus.textContent = `Lesson step ${step.step_no}/${steps.length}: ${label}`;
+        if (step.kind === "narrate") {
+          if (step.meta?.media_id) await board.playMedia(step.meta.media_id);
+          if (step.body) voice.replay(step.body, { lang: step.meta?.lang, voice: step.meta?.voice || "teacher" });
+          await pause(Math.min(4800, Math.max(850, String(step.body || "").length * 30)));
+          continue;
+        }
+        const from = Number(step.op_from || 0), to = Number(step.op_to || 0);
+        const stepRows = rows.filter((row) => Number(row.seq) >= from && Number(row.seq) <= to);
+        if (stepRows.length) board.appendRows(stepRows, true);
+        await pause(Math.min(4200, Math.max(420, stepRows.length * 330)));
+      }
+      if (!playback.cancelled) {
+        els.boardStatus.textContent = `Finished saved lesson: ${lesson.title}`;
+        toast(`Finished “${lesson.title}”.`);
+      }
+    } catch (error) {
+      if (!playback.cancelled) toast(`Could not play this lesson: ${error.message}`, 5200);
+    } finally {
+      if (state.lessonPlayback === playback) state.lessonPlayback = null;
+    }
+  }
 
   async function createSession() {
     const data = await post("/session", { title: "AI Classroom session" });
-    state.sessionId = data.session_id; state.latestSeq = 0; state.messages.clear(); state.task = null; state.sheets = []; state.chatRenderKey = null; state.forceChatFollow = true;
+    stopLessonPlayback();
+    state.sessionId = data.session_id; state.latestSeq = 0; state.messages.clear(); state.task = null; state.sheets = []; state.lessons = []; state.chatRenderKey = null; state.forceChatFollow = true;
     localStorage.setItem(storageKey, state.sessionId);
     await poll(true);
     if (data.sheet_id) await openSheet(data.sheet_id);
@@ -450,8 +532,9 @@
       }
       state.task = data.task;
       state.sheets = data.sheets || [];
+      state.lessons = data.lessons || [];
       state.settings = data.settings || state.settings;
-      renderCouncil(data.council || []); renderPhase(); renderChat(); renderSheets();
+      renderCouncil(data.council || []); renderPhase(); renderChat(); renderSheets(); renderLessons();
       els.ticker.textContent = window.ClassroomUI?.ticker(data.messages || [], state.task) || "Council ready";
       const boardEvents = (data.messages || []).filter((message) => message.kind === "board_event");
       for (const message of data.messages || []) if (message.kind === "speak" && !state.seenSpeak.has(message.seq)) {
@@ -487,8 +570,8 @@
     finally { els.ask.disabled = false; els.question.disabled = false; els.question.focus(); }
   }
 
-  function openDrawer() { els.drawer.classList.add("open"); els.drawer.setAttribute("aria-hidden", "false"); els.scrim.hidden = false; $("#sheets-button").setAttribute("aria-expanded", "true"); $("#files-button").setAttribute("aria-expanded", "true"); $("#learn-button").setAttribute("aria-expanded", "true"); }
-  function closeDrawer() { els.drawer.classList.remove("open"); els.drawer.setAttribute("aria-hidden", "true"); els.scrim.hidden = true; $("#sheets-button").setAttribute("aria-expanded", "false"); $("#files-button").setAttribute("aria-expanded", "false"); $("#learn-button").setAttribute("aria-expanded", "false"); }
+  function openDrawer() { els.drawer.classList.add("open"); els.drawer.setAttribute("aria-hidden", "false"); els.scrim.hidden = false; $("#sheets-button").setAttribute("aria-expanded", "true"); $("#files-button").setAttribute("aria-expanded", "true"); $("#learn-button").setAttribute("aria-expanded", "true"); $("#lessons-button").setAttribute("aria-expanded", "true"); }
+  function closeDrawer() { els.drawer.classList.remove("open"); els.drawer.setAttribute("aria-hidden", "true"); els.scrim.hidden = true; $("#sheets-button").setAttribute("aria-expanded", "false"); $("#files-button").setAttribute("aria-expanded", "false"); $("#learn-button").setAttribute("aria-expanded", "false"); $("#lessons-button").setAttribute("aria-expanded", "false"); }
   function setChatFocus(focused) {
     if (focused && state.boardFocused) setBoardFocus(false);
     const wasFollowing = nearChatBottom();
@@ -601,6 +684,7 @@
   addToKnowledge(els.knowledgeInput); addToKnowledge(els.libraryKnowledgeInput);
   $("#files-button").addEventListener("click", () => { openDrawer(); switchDrawer("files"); });
   $("#learn-button").addEventListener("click", () => { openDrawer(); switchDrawer("knowledge"); });
+  $("#lessons-button").addEventListener("click", () => { openDrawer(); switchDrawer("lessons"); renderLessons(); });
   document.querySelectorAll("[data-drawer-tab]").forEach((b) => b.addEventListener("click", () => switchDrawer(b.dataset.drawerTab)));
   let knowledgeSearchTimer = null;
   $("#knowledge-search").addEventListener("input", (event) => { clearTimeout(knowledgeSearchTimer); knowledgeSearchTimer = setTimeout(async () => { const q = event.target.value.trim(); if (!state.sessionId) return; if (!q) { $("#knowledge-results").textContent = ""; return; } try { const data = await api(`/kb/search?session_id=${state.sessionId}&q=${encodeURIComponent(q)}`); $("#knowledge-results").innerHTML = (data.hits || []).map((hit) => `<article class="knowledge-hit"><b>${escapeHtml(hit.file)}${hit.page ? ` p.${hit.page}` : ""}</b><p>${escapeHtml(hit.text)}</p></article>`).join("") || "No matching chunks."; } catch (error) { toast(error.message); } }, 240); });

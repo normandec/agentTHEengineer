@@ -20,7 +20,7 @@ supabase db push                 # applies supabase/schema.sql
 supabase secrets set CLASSROOM_ADMIN_KEY="$(openssl rand -hex 24)"
 ```
 
-The schema includes RLS-protected `cr_` state, the 10-seat calibration/profile data, memory/search/knowledge tables, files/media/folders, live strokes/watches, and public-read `classroom` storage. RLS has no browser policies; the function uses Supabase’s server-only service role.
+The schema includes RLS-protected `cr_` state, the 10-seat calibration/profile data, memory/search/knowledge tables, files/media/folders, live strokes/watches, durable lesson timelines, and public-read `classroom` storage. RLS has no browser policies; the function uses Supabase’s server-only service role.
 
 For dashboard/connector deployment, run the full contents of `supabase/schema.sql` as one migration. It is idempotent and adds missing columns to older installs.
 
@@ -60,7 +60,7 @@ https://normandec.github.io/agentTHEengineer/
 
 Temporary endpoint testing: append `?api=https://OTHER_PROJECT.supabase.co/functions/v1/classroom` to the Pages URL. No secret is exposed.
 
-The viewer includes full/quick/debate modes, dark appearance, focus chat and full-screen board reading, live board replay/minimap, sticky notes, highlights, laser pointers, verified saved-illustration status, shared folders, dedicated learning-library uploads/search, media embedding, language-aware voice replay/skip, synchronized sheet-lesson playback, and a room statistics panel. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
+The viewer includes full/quick/debate modes, dark appearance, focus chat and full-screen board reading, live board replay/minimap, sticky notes, highlights, laser pointers, verified saved-illustration status, shared folders, dedicated learning-library uploads/search, media embedding, language-aware voice replay/skip, and a **Lessons** drawer. A saved lesson replays the original short narration chunks and durable illustration/erase checkpoints in order, while live lesson batches appear gently as the council explains. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
 
 ## 4. Keep a connected agent alive
 
@@ -77,7 +77,7 @@ The adapter reads the long-poll inbox JSON from stdin, completes one required ac
 
 ## 5. Optional Dropbox archive mirror
 
-`GET /export?session_id=...&admin=...` creates a ZIP containing transcript, `MEMORY.md`, task deliberation documents, sheet PNGs, and a manifest. The mirror utility additionally mirrors the session’s files/media:
+`GET /export?session_id=...&admin=...` creates a ZIP containing transcript, `MEMORY.md`, task deliberation documents, sheet PNGs, saved lesson timelines, and a manifest. The mirror utility additionally mirrors the session’s files/media:
 
 ```bash
 export DROPBOX_ACCESS_TOKEN='Dropbox app token'

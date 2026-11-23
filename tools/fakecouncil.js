@@ -94,29 +94,56 @@ async function sampleVideo(agent, sessionId, sheetId) {
   return { ...done, media_id: begin.media_id };
 }
 
+async function lessonSpeak(agent, task, lesson, body, extra = {}) {
+  await post("/say", {
+    task_id: task.id, kind: "speak", body,
+    meta: { round: task.round, lang: "en", lesson: { lesson_id: lesson.id, sheet_id: lesson.sheet_id, ...extra } },
+  }, agent.token);
+}
+async function lessonDraw(agent, lesson, ops, caption) {
+  const drawing = await post("/draw", { sheet_id: lesson.sheet_id, lesson_id: lesson.id, ops, caption }, agent.token);
+  if (!drawing.ok || drawing.inserted !== ops.length || !drawing.lesson_step) throw new Error(`lesson drawing was not fully saved (${drawing.inserted || 0}/${ops.length})`);
+  return drawing;
+}
 async function draw(agent, task, sheet) {
   const key = `${task.id}:draw`;
   if (agent.done.has(key)) return;
-  const ops = [
+  const created = await post("/lesson", {
+    session_id: task.session_id, sheet_id: sheet.id, task_id: task.id,
+    title: "Heat pumps: follow the heat", summary: "A short narrated diagram that builds the heat-pump cycle in visible steps.",
+  }, agent.token);
+  const lesson = created.lesson;
+  if (!lesson?.id) throw new Error("lesson record was not created");
+  await lessonSpeak(agent, task, lesson, "First, the outside coil absorbs heat from outdoor air. Watch the first arrow appear before we introduce the compressor.");
+  await lessonDraw(agent, lesson, [
     { t: "text", x: 70, y: 75, s: "How a heat pump moves heat", size: 32, c: "#16213e", align: "left" },
     { t: "rect", x: 85, y: 250, w: 280, h: 150, c: "#1a73e8", fill: "#eaf1ff", r: 12 },
     { t: "text", x: 225, y: 325, s: "Outdoor air\nabsorbs heat", size: 23, c: "#16213e", align: "center" },
     { t: "arrow", x1: 375, y1: 325, x2: 635, y2: 325, w: 4, c: "#1a73e8" },
+    { t: "text", x: 90, y: 585, s: "Heat is created by the compressor", size: 24, c: "#d93025", align: "left" },
+  ], "Show outdoor heat entering the cycle.");
+  await lessonSpeak(agent, task, lesson, "Now the compressor uses electricity to raise the refrigerant temperature, and the indoor coil releases the moved heat.");
+  await lessonDraw(agent, lesson, [
     { t: "rect", x: 650, y: 250, w: 280, h: 150, c: "#188038", fill: "#e7f6ee", r: 12 },
     { t: "text", x: 790, y: 310, s: "Compressor", size: 25, c: "#16213e", align: "center" },
     { t: "text", x: 790, y: 350, s: "uses electricity", size: 20, c: "#16213e", align: "center" },
     { t: "arrow", x1: 940, y1: 325, x2: 1200, y2: 325, w: 4, c: "#1a73e8" },
     { t: "rect", x: 1215, y: 250, w: 280, h: 150, c: "#d93025", fill: "#fff0ef", r: 12 },
     { t: "text", x: 1355, y: 325, s: "Indoor coil\nreleases heat", size: 23, c: "#16213e", align: "center" },
+  ], "Add the compressor and indoor release.");
+  await lessonSpeak(agent, task, lesson, "One correction matters: the compressor does not create the heat. Electricity powers the move, while much of the delivered heat came from the surroundings.");
+  await lessonDraw(agent, lesson, [{ t: "erase", pts: [[70, 578], [810, 578]], w: 44 }], "Erase the misleading statement before replacing it.");
+  await lessonDraw(agent, lesson, [
     { t: "text", x: 90, y: 545, s: "COP = heat delivered ÷ electricity used", size: 29, c: "#7b42bc", align: "left" },
-    { t: "text", x: 90, y: 595, s: "Cold weather: larger temperature lift → lower COP", size: 22, c: "#d93025", align: "left" },
-  ];
-  const drawing = await post("/draw", { sheet_id: sheet.id, ops }, agent.token);
-  if (!drawing.ok || drawing.inserted !== ops.length) throw new Error(`drawing was not fully saved (${drawing.inserted || 0}/${ops.length})`);
+    { t: "text", x: 90, y: 595, s: "Electricity moves heat; it does not create all of it", size: 22, c: "#188038", align: "left" },
+  ], "Replace it with the COP check.");
   const media = await sampleVideo(agent, task.session_id, sheet.id);
-  await say(agent, task, "speak", "The labelled heat-pump diagram and its short animation are ready on the shared sheet. Start at outdoor air, follow the arrows through the compressor, then see heat released indoors.", { lang: "en", lesson: { sheet_id: sheet.id, media_id: media.media_id } });
+  await lessonSpeak(agent, task, lesson, "Replay this lesson to follow the outdoor coil, compressor, and indoor coil in order. The animation is linked to this final recap.", { media_id: media.media_id });
+  const timeline = await request(`/lesson/${lesson.id}`);
+  if ((timeline.steps || []).length < 7) throw new Error("lesson timeline is missing narration or drawing checkpoints");
+  await post(`/lesson/${lesson.id}/complete`, {}, agent.token);
   agent.done.add(key);
-  console.log("seat 9 → verified labelled heat-pump diagram and linked lesson animation");
+  console.log("seat 9 → verified progressive saved lesson with narration, drawing, erase, and animation");
 }
 
 async function act(agent, inbox) {
