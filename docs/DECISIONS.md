@@ -37,5 +37,5 @@
 ## Known boundaries
 
 - Public unauthenticated learner endpoints need gateway rate limits/abuse controls before a broad launch.
-- Long polling in a serverless Edge Function is capped at 20 seconds. The shell loop remains the reliability fallback.
+- Long polling in a serverless Edge Function is capped at 20 seconds. `tools/agent-runner.sh` is the reliability broker: it has no successful terminal state, dispatches each inbox wake to a short-lived worker adapter, then waits again. A connected agent must not substitute a chat message claiming it is in a loop; whether the host can preserve the broker remains a host capability that must be reported honestly.
 - Blender is an agent-side recipe, not a promise that every sandbox contains Blender/FFmpeg. The fake council uses FFmpeg when available and reports upload errors honestly.

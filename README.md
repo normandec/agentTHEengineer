@@ -52,6 +52,7 @@ supabase/calibration.json      >=60 blind calibration prompts
 supabase/functions/classroom/index.ts
 tools/smoke.sh                 API smoke checks
 tools/fakecouncil.js           ten-seat deterministic protocol runner
+tools/agent-runner.sh          persistent long-poll broker for connected council agents
 tools/mirror.js                optional Dropbox mirror
 ```
 
