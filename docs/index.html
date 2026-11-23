@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>AI Classroom · Council and whiteboard</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="AI Classroom home"><span class="brand-mark">AI</span><span>CLASSROOM</span></a>
+    <div id="council-strip" class="council-strip" aria-label="Council presence"><span class="council-label">Council: <b>0/10</b> online</span><div class="seat-dots" aria-hidden="true"></div></div>
+    <div class="top-actions">
+      <button id="new-session" class="button quiet" type="button" title="Start a new classroom session">New session</button>
+      <button id="sheets-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">Sheets</button>
+      <button id="about-button" class="icon-button" type="button" title="How the council works" aria-label="How the council works">?</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="chat-pane" aria-label="Conversation">
+      <div class="chat-heading">
+        <div><p class="eyebrow">A shared learning room</p><h1>Ask the council.</h1></div>
+        <span id="phase-pill" class="phase-pill" hidden>Ready</span>
+      </div>
+      <div id="connection-notice" class="connection-notice" hidden></div>
+      <div id="chat-log" class="chat-log" aria-live="polite">
+        <article class="welcome-card">
+          <span class="mini-mark">AI</span>
+          <h2>Ten perspectives. One transparent answer.</h2>
+          <p>Ask a question. The council researches, drafts, challenges, verifies and votes before it replies. While it works, both of you can use the shared board.</p>
+          <div class="welcome-tags"><span>Sources shown</span><span>Confidence stated</span><span>Disagreements visible</span></div>
+        </article>
+      </div>
+      <form id="ask-form" class="composer">
+        <label class="sr-only" for="question-input">Ask the council</label>
+        <textarea id="question-input" rows="2" maxlength="4000" placeholder="Ask the council anything…  Try: Explain how a heat pump moves heat."></textarea>
+        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> for a fast, less deliberative response</span><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></div>
+      </form>
+    </section>
+
+    <section class="board-pane" aria-label="Shared whiteboard">
+      <div class="board-topline">
+        <div class="sheet-title"><span class="live-dot"></span><span id="sheet-name">Shared Sheet</span><span id="sheet-sync" class="sheet-sync">syncing…</span></div>
+        <div class="board-actions">
+          <button id="ask-sheet" class="button quiet compact" type="button">Ask about this sheet</button>
+          <button id="download-png" class="icon-button" type="button" title="Download sheet as PNG" aria-label="Download sheet as PNG">⇩</button>
+        </div>
+      </div>
+
+      <div id="toolbelt" class="toolbelt" role="toolbar" aria-label="Drawing tools">
+        <div class="tool-group" aria-label="Tools">
+          <button data-tool="pen" class="tool active" type="button" title="Pen">✎<span>Pen</span></button>
+          <button data-tool="eraser" class="tool" type="button" title="Eraser">⌫<span>Erase</span></button>
+          <button data-tool="text" class="tool" type="button" title="Text">T<span>Text</span></button>
+          <button data-tool="select" class="tool" type="button" title="Move uploaded images">⌁<span>Move</span></button>
+          <button data-tool="pan" class="tool" type="button" title="Pan board">✋<span>Pan</span></button>
+        </div>
+        <div class="tool-group color-group" aria-label="Pen colour">
+          <button class="color active" data-color="#16213e" style="--swatch:#16213e" type="button" aria-label="Ink"></button>
+          <button class="color" data-color="#1a73e8" style="--swatch:#1a73e8" type="button" aria-label="Blue"></button>
+          <button class="color" data-color="#188038" style="--swatch:#188038" type="button" aria-label="Green"></button>
+          <button class="color" data-color="#d93025" style="--swatch:#d93025" type="button" aria-label="Red"></button>
+          <button class="color" data-color="#7b42bc" style="--swatch:#7b42bc" type="button" aria-label="Purple"></button>
+          <button class="color" data-color="#f29900" style="--swatch:#f29900" type="button" aria-label="Amber"></button>
+        </div>
+        <div class="tool-group width-group" aria-label="Stroke width">
+          <button data-width="2" class="width" type="button" aria-label="Thin line"><i style="height:2px"></i></button>
+          <button data-width="4" class="width active" type="button" aria-label="Medium line"><i style="height:4px"></i></button>
+          <button data-width="8" class="width" type="button" aria-label="Thick line"><i style="height:8px"></i></button>
+        </div>
+        <div class="tool-group right-tools">
+          <label class="upload-button" title="Upload an image to the sheet">▧<input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+          <button id="undo-button" class="tool solo" type="button" title="Undo your last saved operation">↶<span>Undo</span></button>
+          <button id="zoom-out" class="tool solo" type="button" title="Zoom out">−</button>
+          <button id="zoom-reset" class="zoom-readout" type="button" title="Reset zoom">100%</button>
+          <button id="zoom-in" class="tool solo" type="button" title="Zoom in">+</button>
+        </div>
+      </div>
+
+      <div id="board-wrap" class="board-wrap">
+        <canvas id="board" aria-label="Shared whiteboard. Draw with the selected tool."></canvas>
+        <div class="board-corner-note">1600 × 1000 shared space</div>
+        <div id="board-empty" class="board-empty"><span>✦</span><p>Make the first mark.<br><small>Your strokes are saved for the council.</small></p></div>
+      </div>
+      <div class="board-footer"><span id="ops-count">0 operations</span><span>Agent marks appear gently, one at a time.</span></div>
+    </section>
+  </main>
+
+  <aside id="sheets-drawer" class="sheets-drawer" aria-label="Sheets drawer" aria-hidden="true">
+    <div class="drawer-head"><div><p class="eyebrow">Board history</p><h2>Sheets</h2></div><button id="close-sheets" class="icon-button" type="button" aria-label="Close sheets">×</button></div>
+    <div id="sheets-list" class="sheets-list"></div>
+    <button id="new-sheet" class="button outline full" type="button">+ New sheet</button>
+  </aside>
+  <div id="drawer-scrim" class="drawer-scrim" hidden></div>
+
+  <dialog id="about-dialog" class="about-dialog">
+    <button id="close-about" class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">How it works</p><h2>A council that shows its work</h2>
+    <ol><li><b>Research</b> — independent researchers collect evidence and counter-evidence.</li><li><b>Draft & challenge</b> — an explainer drafts, while a critic, verifier and calculator check it.</li><li><b>Revise & vote</b> — the answer is revised; online council members vote. Concerns remain visible.</li><li><b>Teach visually</b> — an illustrator adds a labelled sketch on this shared sheet.</li></ol>
+    <p class="dialog-note">This process reduces errors; it cannot eliminate them. Check important claims against the linked sources.</p>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script src="config.js"></script>
+  <script src="board.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
