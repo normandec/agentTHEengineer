@@ -454,10 +454,25 @@
   $("#files-button").addEventListener("click", () => { openDrawer(); switchDrawer("files"); });
   document.querySelectorAll("[data-drawer-tab]").forEach((b) => b.addEventListener("click", () => switchDrawer(b.dataset.drawerTab)));
   $("#knowledge-search").addEventListener("change", async (event) => { const q=event.target.value.trim(); if(!q||!state.sessionId)return; try{const data=await api(`/kb/search?session_id=${state.sessionId}&q=${encodeURIComponent(q)}`);$("#knowledge-results").innerHTML=(data.hits||[]).map((hit)=>`<article class="knowledge-hit"><b>${escapeHtml(hit.file)}${hit.page?` p.${hit.page}`:""}</b><p>${escapeHtml(hit.text)}</p></article>`).join("")||"No matching chunks.";}catch(e){toast(e.message)} });
-  document.addEventListener("dragover", (e) => { e.preventDefault(); els.drop.hidden = false; });
-  document.addEventListener("dragleave", (e) => { if(e.target===document.documentElement) els.drop.hidden=true; });
-  document.addEventListener("drop", (e) => { e.preventDefault(); els.drop.hidden=true; if(e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files, e.shiftKey); });
-  document.addEventListener("keydown", (e) => { if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();ask(els.question.value);} if(e.target.matches("textarea,input"))return; if(e.key.toLowerCase()==="n")newSheet(); if(e.key.toLowerCase()==="p")document.querySelector('[data-tool="pen"]').click(); if(e.key.toLowerCase()==="e")document.querySelector('[data-tool="eraser"]').click(); if(e.key.toLowerCase()==="h")document.querySelector('[data-tool="highlight"]').click(); if(e.key.toLowerCase()==="l")document.querySelector('[data-tool="laser"]').click(); if(e.key.toLowerCase()==="r")board.replay(); if(e.key===" ")document.querySelector('[data-tool="pan"]').click(); });
+  // A drag event can be fired by a browser integration without a file payload.
+  // Show the full-screen drop target only for real files, and always provide a
+  // deterministic close path so it cannot trap the classroom behind an overlay.
+  let dropHideTimer = null;
+  const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes("Files") || Boolean(event.dataTransfer?.files?.length);
+  const closeDropZone = () => { clearTimeout(dropHideTimer); els.drop.hidden = true; };
+  const openDropZone = (event) => { if (!isFileDrag(event)) return false; clearTimeout(dropHideTimer); els.drop.hidden = false; return true; };
+  document.addEventListener("dragenter", (event) => { if (openDropZone(event)) event.preventDefault(); });
+  document.addEventListener("dragover", (event) => { if (openDropZone(event)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } });
+  document.addEventListener("dragleave", (event) => {
+    if (!isFileDrag(event)) return;
+    // Drag leave bubbles for child elements; wait briefly and only close when
+    // the pointer actually leaves the document or the drop target.
+    if (!event.relatedTarget || !document.documentElement.contains(event.relatedTarget)) dropHideTimer = setTimeout(closeDropZone, 40);
+  });
+  document.addEventListener("drop", (event) => { if (!isFileDrag(event)) return; event.preventDefault(); closeDropZone(); if (event.dataTransfer?.files?.length) uploadFiles(event.dataTransfer.files, event.shiftKey); });
+  window.addEventListener("blur", closeDropZone); window.addEventListener("pagehide", closeDropZone);
+  $("#cancel-drop").addEventListener("click", closeDropZone);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !els.drop.hidden) { closeDropZone(); return; } if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();ask(els.question.value);} if(e.target.matches("textarea,input"))return; if(e.key.toLowerCase()==="n")newSheet(); if(e.key.toLowerCase()==="p")document.querySelector('[data-tool="pen"]').click(); if(e.key.toLowerCase()==="e")document.querySelector('[data-tool="eraser"]').click(); if(e.key.toLowerCase()==="h")document.querySelector('[data-tool="highlight"]').click(); if(e.key.toLowerCase()==="l")document.querySelector('[data-tool="laser"]').click(); if(e.key.toLowerCase()==="r")board.replay(); if(e.key===" ")document.querySelector('[data-tool="pan"]').click(); });
   function switchDrawer(tab) { state.drawerTab=tab; document.querySelectorAll("[data-drawer-tab]").forEach((b)=>b.classList.toggle("active",b.dataset.drawerTab===tab)); document.querySelectorAll(".drawer-panel").forEach((p)=>p.hidden=p.id!==`${tab}-list`); }
   els.form.addEventListener("submit", (event) => { event.preventDefault(); ask(els.question.value); });
   $("#new-session").addEventListener("click", () => { if (confirm("Start a new session? This keeps older sessions in the database, but switches this browser to a clean room.")) createSession(); });
