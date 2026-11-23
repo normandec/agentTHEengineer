@@ -4,18 +4,28 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b1020">
+  <meta name="color-scheme" content="light dark">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
   <title>AI Classroom · Council and whiteboard</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="additions.css">
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="./" aria-label="AI Classroom home"><span class="brand-mark">AI</span><span>CLASSROOM</span></a>
     <div id="council-strip" class="council-strip" aria-label="Council presence"><span class="council-label">Council: <b>0/10</b> online</span><div class="seat-dots" aria-hidden="true"></div></div>
     <div class="top-actions">
+      <button id="mode-button" class="button quiet compact" type="button" title="Choose how the council works">Full mode</button>
+      <button id="sound-button" class="button quiet compact" type="button" title="Enable spoken council messages">🔈 Sound on</button>
+      <button id="voice-skip-button" class="icon-button" type="button" title="Skip current voice" aria-label="Skip current voice">⏭</button>
       <button id="new-session" class="button quiet" type="button" title="Start a new classroom session">New session</button>
+      <button id="files-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">📁 Files <b id="files-count">0</b></button>
       <button id="sheets-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">Sheets</button>
+      <button id="theme-button" class="icon-button" type="button" title="Use dark appearance" aria-label="Use dark appearance">◐</button>
+      <button id="settings-button" class="icon-button" type="button" title="Room settings and statistics" aria-label="Room settings and statistics">⚙</button>
       <button id="about-button" class="icon-button" type="button" title="How the council works" aria-label="How the council works">?</button>
     </div>
   </header>
@@ -27,6 +37,7 @@
         <span id="phase-pill" class="phase-pill" hidden>Ready</span>
       </div>
       <div id="connection-notice" class="connection-notice" hidden></div>
+      <div id="phase-bar-slot"></div>
       <div id="chat-log" class="chat-log" aria-live="polite">
         <article class="welcome-card">
           <span class="mini-mark">AI</span>
@@ -35,10 +46,11 @@
           <div class="welcome-tags"><span>Sources shown</span><span>Confidence stated</span><span>Disagreements visible</span></div>
         </article>
       </div>
+      <div id="live-ticker" class="live-ticker" aria-live="polite">Council ready</div>
       <form id="ask-form" class="composer">
         <label class="sr-only" for="question-input">Ask the council</label>
         <textarea id="question-input" rows="2" maxlength="4000" placeholder="Ask the council anything…  Try: Explain how a heat pump moves heat."></textarea>
-        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> for a fast, less deliberative response</span><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></div>
+        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> fast · <kbd>/debate</kbd> full debate · <kbd>Ctrl↵</kbd> send</span><span class="composer-actions"><label class="files-button">+ Files<input id="files-input" type="file" multiple></label><button id="mic-button" class="icon-button compact-icon" type="button" title="Dictate question">🎤</button><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></span></div>
       </form>
     </section>
 
@@ -56,6 +68,9 @@
           <button data-tool="pen" class="tool active" type="button" title="Pen">✎<span>Pen</span></button>
           <button data-tool="eraser" class="tool" type="button" title="Eraser">⌫<span>Erase</span></button>
           <button data-tool="text" class="tool" type="button" title="Text">T<span>Text</span></button>
+          <button data-tool="sticky" class="tool" type="button" title="Sticky note">▣<span>Note</span></button>
+          <button data-tool="highlight" class="tool" type="button" title="Highlight a region">▨<span>Mark</span></button>
+          <button data-tool="laser" class="tool" type="button" title="Temporary live laser pointer">⌾<span>Laser</span></button>
           <button data-tool="select" class="tool" type="button" title="Move uploaded images">⌁<span>Move</span></button>
           <button data-tool="pan" class="tool" type="button" title="Pan board">✋<span>Pan</span></button>
         </div>
@@ -74,6 +89,9 @@
         </div>
         <div class="tool-group right-tools">
           <label class="upload-button" title="Upload an image to the sheet">▧<input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
+          <button id="grid-toggle" class="tool solo active" type="button" title="Toggle grid">#</button>
+          <button id="replay-button" class="tool solo" type="button" title="Replay this sheet from the beginning">▷<span>Replay</span></button>
+          <button id="snapshot-sheet" class="tool solo" type="button" title="Save a snapshot as a new sheet">▣</button>
           <button id="undo-button" class="tool solo" type="button" title="Undo your last saved operation">↶<span>Undo</span></button>
           <button id="zoom-out" class="tool solo" type="button" title="Zoom out">−</button>
           <button id="zoom-reset" class="zoom-readout" type="button" title="Reset zoom">100%</button>
@@ -83,6 +101,7 @@
 
       <div id="board-wrap" class="board-wrap">
         <canvas id="board" aria-label="Shared whiteboard. Draw with the selected tool."></canvas>
+        <canvas id="minimap" class="minimap" width="240" height="150" aria-label="Board minimap"></canvas>
         <div class="board-corner-note">1600 × 1000 shared space</div>
         <div id="board-empty" class="board-empty"><span>✦</span><p>Make the first mark.<br><small>Your strokes are saved for the council.</small></p></div>
       </div>
@@ -92,7 +111,11 @@
 
   <aside id="sheets-drawer" class="sheets-drawer" aria-label="Sheets drawer" aria-hidden="true">
     <div class="drawer-head"><div><p class="eyebrow">Board history</p><h2>Sheets</h2></div><button id="close-sheets" class="icon-button" type="button" aria-label="Close sheets">×</button></div>
-    <div id="sheets-list" class="sheets-list"></div>
+    <div class="drawer-tabs"><button data-drawer-tab="sheets" class="active">Sheets</button><button data-drawer-tab="files">Files</button><button data-drawer-tab="media">Media</button><button data-drawer-tab="knowledge">Knowledge</button></div>
+    <div id="sheets-list" class="sheets-list drawer-panel"></div>
+    <div id="files-list" class="files-list drawer-panel" hidden></div>
+    <div id="media-list" class="files-list drawer-panel" hidden></div>
+    <div id="knowledge-list" class="files-list drawer-panel" hidden><label>Search knowledge <input id="knowledge-search" type="search" placeholder="Search learned files"></label><div id="knowledge-results"></div></div>
     <button id="new-sheet" class="button outline full" type="button">+ New sheet</button>
   </aside>
   <div id="drawer-scrim" class="drawer-scrim" hidden></div>
@@ -103,10 +126,37 @@
     <ol><li><b>Research</b> — independent researchers collect evidence and counter-evidence.</li><li><b>Draft & challenge</b> — an explainer drafts, while a critic, verifier and calculator check it.</li><li><b>Revise & vote</b> — the answer is revised; online council members vote. Concerns remain visible.</li><li><b>Teach visually</b> — an illustrator adds a labelled sketch on this shared sheet.</li></ol>
     <p class="dialog-note">This process reduces errors; it cannot eliminate them. Check important claims against the linked sources.</p>
   </dialog>
+  <dialog id="mode-dialog" class="about-dialog settings-dialog">
+    <button id="close-mode" class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">Council mode</p><h2>Choose the pace.</h2>
+    <fieldset id="mode-options" class="mode-options">
+      <label><input type="radio" name="mode" value="full" checked><span><b>Full council</b><small>Research, challenge, verification, vote, answer and board.</small></span></label>
+      <label><input type="radio" name="mode" value="quick"><span><b>Quick answer</b><small>Skip the research queue for a lightweight response.</small></span></label>
+      <label><input type="radio" name="mode" value="debate"><span><b>Debate</b><small>Ask the full council to foreground competing evidence.</small></span></label>
+    </fieldset>
+  </dialog>
+  <dialog id="settings-dialog" class="about-dialog settings-dialog">
+    <button id="close-settings" class="icon-button dialog-close" type="button" aria-label="Close">×</button>
+    <p class="eyebrow">Room controls</p><h2>Settings &amp; signal.</h2>
+    <section class="stats-grid" aria-live="polite"><div><b id="stat-questions">—</b><span>answers</span></div><div><b id="stat-time">—</b><span>average cycle</span></div><div><b id="stat-online">—</b><span>seats online</span></div></section>
+    <label class="setting-toggle"><span><b>Follow new messages</b><small>Keep the conversation pinned to the newest activity.</small></span><input id="autoscroll-toggle" type="checkbox" checked></label>
+    <label class="setting-toggle"><span><b>Detailed voice</b><small>Allow longer council narration when a speaker posts it.</small></span><input id="voice-verbose-toggle" type="checkbox"></label>
+    <section id="admin-settings" class="admin-settings" hidden>
+      <p class="eyebrow">Admin timing</p>
+      <div class="timing-grid"><label>Quorum<input id="setting-quorum" type="number" min="1" max="10"></label><label>Phase seconds<input id="setting-phase" type="number" min="15" max="600"></label><label>Revision seconds<input id="setting-revise" type="number" min="15" max="600"></label></div>
+      <button id="save-settings" class="button outline" type="button">Save room timing</button>
+    </section>
+    <div class="settings-actions"><button id="export-session" class="button outline" type="button">Download session ZIP</button><button id="refresh-stats" class="button quiet" type="button">Refresh</button></div>
+  </dialog>
+  <div id="drop-zone" class="drop-zone" hidden><div><strong>Drop files into this classroom</strong><br><small>Any format · up to 100 MB · attach or learn</small></div></div>
+  <div id="upload-queue" class="upload-queue"></div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
   <script src="config.js"></script>
+  <script src="ui.js"></script>
+  <script src="voice.js"></script>
+  <script src="files.js"></script>
   <script src="board.js"></script>
   <script src="app.js"></script>
 </body>
