@@ -148,18 +148,27 @@ async function act(agent, inbox) {
     started = Date.now();
     console.log(`question submitted; polling ten agents for up to ${runFor}s`);
     while (Date.now() - started < runFor * 1000) {
-      await Promise.all(agents.map(async (agent) => {
+      const inboxes = await Promise.all(agents.map(async (agent) => {
         try {
           const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}&last_seq=${agent.lastSeq}`);
           for (const message of inbox.since_last || []) agent.lastSeq = Math.max(agent.lastSeq, message.seq || 0);
           await act(agent, inbox);
+          return inbox;
         } catch (error) {
           errors++;
           const note = `seat ${agent.expectedSeat} error: ${error.message}`;
           errorNotes.push(note);
           console.error(note);
+          return null;
         }
       }));
+      // The route intentionally hides completed tasks. One clean all-idle poll
+      // confirms that the whole state machine reached done, without idling until
+      // the test's maximum timeout.
+      if (inboxes.every((inbox) => inbox && !inbox.task)) {
+        console.log("all seats observed the completed task");
+        break;
+      }
       await pause(1000);
     }
     const transcript = await request(`/transcript?session_id=${session.session_id}&limit=100`);
