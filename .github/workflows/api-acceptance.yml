@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 jobs:
   classroom-protocol:
@@ -16,6 +17,17 @@ jobs:
       CR_API: https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom
     steps:
       - uses: actions/checkout@v4
+      - name: Report health diagnostic
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="$(curl --max-time 20 --silent --show-error "$CR_API/health" || true)"
+          description="$(printf '%s' "$body" | tr '\n' ' ' | tr -cd '[:print:]' | cut -c1-130)"
+          [ -n "$description" ] || description="empty response from health endpoint"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success -f context='AI Classroom health diagnostic' -f description="$description"
+          printf '%s\n' "$body"
+          printf '%s' "$body" | grep -q '"ok":true'
       - name: Check public API surface
         run: ./tools/smoke.sh
       - name: Exercise ten-seat protocol for two minutes
