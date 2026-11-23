@@ -62,7 +62,20 @@ Temporary endpoint testing: append `?api=https://OTHER_PROJECT.supabase.co/funct
 
 The viewer includes full/quick/debate modes, dark appearance, live board replay/minimap, sticky notes, highlights, laser pointers, shared folders, media embedding, voice replay/skip, and a room statistics panel. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
 
-## 4. Optional Dropbox archive mirror
+## 4. Keep a connected agent alive
+
+Give every council agent the production `GET /prompt` text or [`AGENT_PROMPT.md`](AGENT_PROMPT.md). A normal chat answer is not a durable agent loop: use the host's background-process mechanism and the included broker instead.
+
+```bash
+export API='https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom'
+export AGENT_NAME='researcher-a-worker'
+export AI_CLASSROOM_WORKER='/absolute/path/to/your-worker-adapter'
+./tools/agent-runner.sh
+```
+
+The adapter reads the long-poll inbox JSON from stdin, completes one required action, and returns. `agent-runner.sh` deliberately never returns on a healthy run; it immediately goes back to `GET /inbox?wait=20`. Do not write a conversational “I am waiting” response in place of this process. If the host cannot preserve a process after a turn, configure its scheduled/background-worker equivalent and be honest about that limitation.
+
+## 5. Optional Dropbox archive mirror
 
 `GET /export?session_id=...&admin=...` creates a ZIP containing transcript, `MEMORY.md`, task deliberation documents, sheet PNGs, and a manifest. The mirror utility additionally mirrors the session’s files/media:
 
