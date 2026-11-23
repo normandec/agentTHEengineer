@@ -13,7 +13,9 @@ if (!base) {
   console.error("Usage: node tools/fakecouncil.js <API_URL> [seconds]");
   process.exit(2);
 }
-const started = Date.now();
+// The requested budget covers the actual council cycle. Seat claiming and calibration
+// are setup work and can take a little while on a cold Edge Function instance.
+let started = 0;
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const { readFileSync, writeFileSync, unlinkSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
@@ -142,7 +144,8 @@ async function act(agent, inbox) {
     // Sequential first claims prove the fixed-seat protocol deterministically.
     for (const agent of agents) await claim(agent);
     await post("/ask", { session_id: session.session_id, sheet_id: session.sheet_id, text: "Explain how a heat pump moves heat, including what COP means." });
-    console.log("question submitted; polling ten agents");
+    started = Date.now();
+    console.log(`question submitted; polling ten agents for up to ${runFor}s`);
     while (Date.now() - started < runFor * 1000) {
       await Promise.all(agents.map(async (agent) => {
         try {
@@ -156,10 +159,12 @@ async function act(agent, inbox) {
     const transcript = await request(`/transcript?session_id=${session.session_id}&limit=100`);
     const final = transcript.messages?.find((message) => message.kind === "final");
     const drawing = await request(`/sheet/${session.sheet_id}/ops?since=0`);
-    if (!final) { errors++; console.error("No final answer appeared before the timeout."); }
-    if (!drawing.ops?.length) { errors++; console.error("No drawing operations appeared before the timeout."); }
-    if (errors) { console.error(`fakecouncil finished with ${errors} error(s)`); process.exitCode = 1; }
-    else console.log(`fakecouncil completed cleanly: final answer + ${drawing.ops.length} board operations.`);
+    const taskState = await request(`/session/${session.session_id}?since=0`);
+    const summary = taskState.task ? `phase=${taskState.task.phase}, round=${taskState.task.round}` : "no active task";
+    if (!final) { errors++; console.error(`No final answer appeared before the timeout (${summary}).`); }
+    if (!drawing.ops?.length) { errors++; console.error(`No drawing operations appeared before the timeout (${summary}).`); }
+    if (errors) { console.error(`fakecouncil finished with ${errors} error(s): ${summary}`); process.exitCode = 1; }
+    else console.log(`fakecouncil completed cleanly: final answer + ${drawing.ops.length} board operations (${summary}).`);
   } catch (error) {
     console.error(`fakecouncil setup error: ${error.message}`);
     process.exitCode = 1;
