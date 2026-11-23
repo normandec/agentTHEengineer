@@ -18,6 +18,7 @@
       this.pointer = null;
       this.dragImage = null;
       this.imageCache = new Map();
+      this.mediaNodes = new Map();
       this.progressQueue = [];
       this.progressTimer = null;
       this.dirty = false;
@@ -380,16 +381,37 @@
     }
 
     renderMedia(tr) {
-      const rows = this.activeRows().filter((r) => ["video", "model3d"].includes(r.op?.t));
-      this.mediaLayer.innerHTML = "";
+      const rows = this.activeRows().filter((row) => ["video", "model3d"].includes(row.op?.t));
+      const live = new Set();
       for (const row of rows) {
-        const op = row.op, el = op.t === "video" ? document.createElement("video") : document.createElement("model-viewer");
-        el.className = "board-media"; el.style.left = `${tr.x + op.x * tr.scale}px`; el.style.top = `${tr.y + op.y * tr.scale}px`; el.style.width = `${op.w * tr.scale}px`; el.style.height = `${op.h * tr.scale}px`;
-        if (op.t === "video") { el.src = op.url; el.poster = op.poster || ""; el.controls = true; el.loop = true; el.muted = true; el.playsInline = true; }
-        else { el.setAttribute("src", op.url); el.setAttribute("camera-controls", ""); el.setAttribute("auto-rotate", ""); if (op.poster) el.setAttribute("poster", op.poster); }
+        const op = row.op, key = String(op.media_id || row.seq || op.url);
+        live.add(key);
+        let el = this.mediaNodes.get(key);
+        if (!el || el.dataset.kind !== op.t) {
+          el?.remove();
+          el = op.t === "video" ? document.createElement("video") : document.createElement("model-viewer");
+          el.className = "board-media"; el.dataset.kind = op.t; el.dataset.mediaId = String(op.media_id || ""); el.dataset.mediaUrl = op.url || "";
+          if (op.t === "video") {
+            el.src = op.url; el.poster = op.poster || ""; el.controls = true; el.loop = true; el.muted = true; el.playsInline = true; el.preload = "metadata";
+          } else {
+            el.setAttribute("src", op.url); el.setAttribute("camera-controls", ""); el.setAttribute("auto-rotate", ""); if (op.poster) el.setAttribute("poster", op.poster);
+          }
+          this.mediaNodes.set(key, el);
+        }
+        el.style.left = `${tr.x + op.x * tr.scale}px`; el.style.top = `${tr.y + op.y * tr.scale}px`; el.style.width = `${op.w * tr.scale}px`; el.style.height = `${op.h * tr.scale}px`;
         this.mediaLayer.append(el);
       }
+      for (const [key, el] of this.mediaNodes) if (!live.has(key)) { el.remove(); this.mediaNodes.delete(key); }
     }
+
+    hasPlayableMedia() { return [...this.mediaNodes.values()].some((node) => node.dataset.kind === "video"); }
+    async playMedia(reference = "") {
+      const videos = [...this.mediaNodes.values()].filter((node) => node.dataset.kind === "video");
+      const target = reference ? videos.find((node) => node.dataset.mediaId === String(reference) || node.dataset.mediaUrl === String(reference)) : videos[0];
+      if (!target) return false;
+      try { target.currentTime = 0; await target.play(); return true; } catch (error) { this.options.onInfo?.("The animation is ready on the sheet; press play if your browser blocked it."); return false; }
+    }
+    pauseMedia() { for (const node of this.mediaNodes.values()) if (node.dataset.kind === "video") node.pause?.(); }
 
     drawOp(ctx, op) {
       if (!op || !op.t) return;

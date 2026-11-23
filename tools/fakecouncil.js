@@ -85,7 +85,9 @@ async function sampleVideo(agent, sessionId, sheetId) {
   const bytes = made.status === 0 ? readFileSync(out) : Buffer.from("AI CLASSROOM demo video placeholder");
   try { unlinkSync(out); } catch (_) {}
   const begin = await post("/media/begin", { session_id: sessionId, sheet_id: sheetId, filename: "heat-pump-cycle.mp4", mime: "video/mp4", bytes: bytes.length, caption: "Three-second heat-pump cycle animation." }, agent.token);
-  await signedPut(begin.upload_url, begin.headers, bytes, "video/mp4"); return post("/media/done", { media_id: begin.media_id }, agent.token);
+  await signedPut(begin.upload_url, begin.headers, bytes, "video/mp4");
+  const done = await post("/media/done", { media_id: begin.media_id }, agent.token);
+  return { ...done, media_id: begin.media_id };
 }
 
 async function draw(agent, task, sheet) {
@@ -105,10 +107,12 @@ async function draw(agent, task, sheet) {
     { t: "text", x: 90, y: 545, s: "COP = heat delivered ÷ electricity used", size: 29, c: "#7b42bc", align: "left" },
     { t: "text", x: 90, y: 595, s: "Cold weather: larger temperature lift → lower COP", size: 22, c: "#d93025", align: "left" },
   ];
-  await post("/draw", { sheet_id: sheet.id, ops }, agent.token);
-  await sampleVideo(agent, task.session_id, sheet.id);
+  const drawing = await post("/draw", { sheet_id: sheet.id, ops }, agent.token);
+  if (!drawing.ok || drawing.inserted !== ops.length) throw new Error(`drawing was not fully saved (${drawing.inserted || 0}/${ops.length})`);
+  const media = await sampleVideo(agent, task.session_id, sheet.id);
+  await say(agent, task, "speak", "The labelled heat-pump diagram and its short animation are ready on the shared sheet. Start at outdoor air, follow the arrows through the compressor, then see heat released indoors.", { lang: "en", lesson: { sheet_id: sheet.id, media_id: media.media_id } });
   agent.done.add(key);
-  console.log("seat 9 → drew labelled heat-pump diagram");
+  console.log("seat 9 → verified labelled heat-pump diagram and linked lesson animation");
 }
 
 async function act(agent, inbox) {

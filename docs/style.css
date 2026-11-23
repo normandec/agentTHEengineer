@@ -93,7 +93,8 @@ kbd { color:#5b6b86; padding:1px 3px; background:#f1f3f7; border:1px solid #e0e5
 
 .board-pane { background:#f5f7fb; display:flex; flex-direction:column; }
 .board-topline { min-height:60px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:0 18px; border-bottom:1px solid var(--line); background:#fff; }
-.sheet-title { display:flex; align-items:center; gap:8px; color:#30415e; font-size:13px; font-weight:600; }
+.sheet-title { display:flex; align-items:center; gap:8px; min-width:0; color:#30415e; font-size:13px; font-weight:600; }
+.board-status { overflow:hidden; max-width:190px; color:#73839b; font-size:10px; font-weight:400; text-overflow:ellipsis; white-space:nowrap; }
 .live-dot { width:8px; height:8px; border-radius:50%; background:#52bd8b; box-shadow:0 0 0 3px #e1f7ec; }
 .sheet-sync { color:#8b97ab; font-size:10px; font-weight:400; }
 .board-actions { display:flex; align-items:center; gap:4px; }
@@ -155,6 +156,17 @@ body.chat-focus .connection-notice { margin-left:clamp(18px,5vw,72px); margin-ri
 body.chat-focus .chat-log { padding-left:clamp(18px,8vw,160px); padding-right:clamp(18px,8vw,160px); }
 body.chat-focus .composer { padding-left:clamp(18px,5vw,72px); padding-right:clamp(18px,5vw,72px); }
 body.chat-focus .jump-latest { bottom:116px; }
+
+/* The sheet focus view keeps all drawing and media controls available. */
+body.board-focus { overflow:hidden; }
+body.board-focus .topbar { display:none; }
+body.board-focus .workspace { display:block; height:100vh; }
+body.board-focus .chat-pane { display:none; }
+body.board-focus .board-pane { position:fixed; z-index:40; inset:0; min-height:0; }
+body.board-focus .board-topline { padding-left:clamp(12px,4vw,54px); padding-right:clamp(12px,4vw,54px); }
+body.board-focus .toolbelt { padding-left:clamp(8px,3vw,38px); padding-right:clamp(8px,3vw,38px); }
+body.board-focus .board-wrap { margin:14px clamp(12px,4vw,54px) 8px; }
+body.board-focus .board-footer { padding-left:clamp(12px,4vw,54px); padding-right:clamp(12px,4vw,54px); }
 
 @media (max-width:850px) { .topbar { gap:10px; padding:0 13px; } .council-strip { min-width:0; } .council-label { display:none; } .workspace { height:auto; min-height:calc(100vh - 62px); grid-template-columns:1fr; } body { overflow:auto; } .chat-pane { min-height:560px; border-right:0; border-bottom:1px solid var(--line); } .board-pane { min-height:590px; } .toolbelt { gap:5px; } .tool-group { padding-right:5px; } .tool span { display:none; } .right-tools { margin-left:0; } }
 @media (max-width:520px) { .topbar { height:54px; } .brand { font-size:11px; } .brand-mark { width:23px; height:23px; } .top-actions .quiet { padding:0 7px; } .top-actions #new-session { display:none; } .seat-dots { gap:3px; } .seat-dot { width:8px; height:8px; } .workspace { min-height:calc(100vh - 54px); } .chat-heading { padding:20px 18px 12px; } .chat-log { padding:4px 13px 16px; } .composer { padding:10px 12px 12px; } .board-topline { padding:0 11px; } .toolbelt { padding:6px; } .color-group { display:none; } .board-wrap { margin:9px 8px 6px; } .board-footer { padding:0 9px 8px; } .board-footer span:last-child { display:none; } .drawer-scrim { inset:54px 0 0; } .sheets-drawer { top:54px; } }
