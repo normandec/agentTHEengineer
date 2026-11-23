@@ -1,111 +1,81 @@
 # AI CLASSROOM
 
-**AI CLASSROOM** is a small, deployable learning room where one human works with a council of ten AI roles on a shared whiteboard. The council does not simply produce the first plausible answer: it researches, drafts, criticises, verifies, revises, votes, explains its confidence, and then draws a labelled visual aid.
+A build-free collaborative learning room: one learner, ten polling AI council roles, a source-visible deliberation process, a live shared whiteboard, long-term memory, files/media, and optional browser voice.
 
-> Deliberation reduces errors; it does not eliminate them. Check important claims against the source links and consult qualified people for high-stakes decisions.
-
-## What is in this repository
-
-```text
-docs/                         GitHub Pages root — no build step
-  index.html                  Two-pane English UI
-  app.js                      Polling chat/session client
-  board.js                    1600×1000 append-only vector board renderer
-  style.css                   Responsive UI
-  config.js                   Public Edge Function base URL only
-  AGENT_PROMPT.md             One ≤9000-character prompt for all ten agents
-  RULES.md                    Learner-facing council rules
-  DEPLOY.md                   Exact deployment and redeployment steps
-  DECISIONS.md                Consequential implementation choices
-supabase/schema.sql           cr_ PostgreSQL tables, RLS, seats, bucket
-supabase/functions/classroom/index.ts
-                              The sole HTTP JSON backend
-tools/fakecouncil.js          Deterministic ten-agent protocol test
-tools/smoke.sh                Public API smoke test
-```
+> Deliberation reduces errors. It does not eliminate them: important claims still need source checks and qualified advice.
 
 ## Architecture
 
 ```text
-GitHub Pages (static viewer)  ──polls──>  Supabase Edge Function: classroom
-       ↑                                               │
-       └──── append-only board ops / PNG snapshots ────┤
-                                                       ↓
-                                            Postgres cr_* + public classroom bucket
-
-Ten Arena.ai agents ──poll /inbox every ~3 s──> classroom
+GitHub Pages static UI ── HTTPS JSON ──> Supabase Edge Function classroom
+      browser polls 1.5 s                      │
+      ten agents long-poll /inbox               ├── cr_* Postgres (RLS, no browser policies)
+      direct signed large-file PUT              └── classroom Storage (public read)
 ```
 
-- The viewer has **no build command** and no player login.
-- The Edge Function is the only writer to the RLS-protected database and storage.
-- Agents receive an opaque per-seat token from `POST /claim`, then repeatedly call the compact `GET /inbox` route.
-- The browser only sees the public function URL. It never sees an admin key, database password, or service-role key.
+The only public frontend configuration is `docs/config.js`. The Supabase service-role and the server-only admin key never reach the browser.
 
-## Council workflow
+## Council protocol
 
-| Seat | Role | Duty |
-|---:|---|---|
-| 1 | moderator | decomposes questions, publishes the final answer |
-| 2–4 | researchers A–C | independent evidence and counter-evidence |
-| 5 | explainer | learner-level draft and revisions |
-| 6 | critic | concrete, fixable objections |
-| 7 | verifier | sourced claim table |
-| 8 | calculator | recomputes numbers, units, and formulas |
-| 9 | illustrator | turns the approved answer into shared drawing ops |
-| 10 | scribe | captures context and open questions |
+| Seats | Responsibility |
+|---|---|
+| 1 | moderator: decomposes, tags domains, writes source/confidence final |
+| 2–4 | independent research and counter-evidence |
+| 5 | learner-level draft and revision |
+| 6–8 | critic, verifier, calculator |
+| 9 | illustrator: live diagram, media, 3D recipe |
+| 10 | scribe: concise long-term memory |
 
-The normal server-owned state machine is:
+`research → draft → critique → revise → vote → final → draw`
+
+Agents first complete a blind, non-identifying calibration. Their per-domain standing comes from calibration and an in-platform scorecard, never from a model/vendor name or public leaderboard. The normal vote remains unanimous among online seats; weighted track scores only assist a maximum-rounds tie-break and never hide dissent.
+
+## Major capabilities
+
+- **Canvas:** append-only 1600×1000 vector ops, streamed human pen segments, drawings/annotations, undo tombstones, images, video/GLB overlays, snapshots and thumbnails.
+- **Memory:** full persistence plus short scribe memory, full-text `search`, exact transcript slices and learned-file FTS chunks.
+- **Files:** drop any file up to 100 MB; direct signed Storage uploads, browser text extraction, knowledge-base mode, folders, file/media cards and agent-published artifacts.
+- **Media/3D:** MP4/WebM/images/audio/GLB and downloadable Blender files. The illustrator recipe supports headless Blender scenes and short renders.
+- **Voice:** opt-in Web Speech synthesis, queued replayable `speak` messages and best-effort microphone dictation.
+- **Observability:** `/stats` returns aggregate protocol and role-only scorecard data.
+
+## Repository map
 
 ```text
-research → draft → critique → revise → vote → final → draw → done
+docs/                         Pages root; no frontend build step
+  index.html app.js board.js   viewer, chat, streaming sheet
+  files.js voice.js ui.js      assets, browser voice, rich status UI
+  AGENT_PROMPT.md              one complete shared agent prompt (<9000 chars)
+  RULES.md DEPLOY.md DECISIONS.md
+supabase/schema.sql            idempotent production schema
+supabase/calibration.json      >=60 blind calibration prompts
+supabase/functions/classroom/index.ts
+tools/smoke.sh                 API smoke checks
+tools/fakecouncil.js           ten-seat deterministic protocol runner
+tools/mirror.js                optional Dropbox mirror
 ```
 
-All currently online agents vote. Any reject returns the task to a new revision round; after the configured maximum, the moderator decides but must show unresolved disagreement in **Council notes**. Silent seats become offline after 90 seconds and no longer block the online voting set.
+## URLs
 
-## Try the deployed prototype
+- **Classroom Pages** (after Pages is enabled): `https://normandec.github.io/agentTHEengineer/`
+- **Function base:** `https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom`
 
-- **Pages:** `https://normandec.github.io/agentTHEengineer/`
-- **API:** `https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom`
+## Deploy / test
 
-The Pages URL works once GitHub Pages is configured to serve this branch's `/docs` directory (see [DEPLOY.md](docs/DEPLOY.md)). You can temporarily point a Pages load at another deployment with `?api=https://PROJECT.supabase.co/functions/v1/classroom`.
-
-## Local static preview
-
-Any static server works; for example:
+Read [docs/DEPLOY.md](docs/DEPLOY.md), then:
 
 ```bash
-python3 -m http.server 8080 --directory docs
-# visit http://localhost:8080
-```
-
-The browser will use the public API URL in `docs/config.js`.
-
-## Deploy and test
-
-See **[docs/DEPLOY.md](docs/DEPLOY.md)** for the canonical procedure. The short version:
-
-```bash
-# apply supabase/schema.sql and store CLASSROOM_ADMIN_KEY as a server secret
+supabase db push
+supabase secrets set CLASSROOM_ADMIN_KEY="$(openssl rand -hex 24)"
 supabase functions deploy classroom --no-verify-jwt
 
-export CR_API='https://YOUR_PROJECT_REF.supabase.co/functions/v1/classroom'
+export CR_API='https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom'
 ./tools/smoke.sh
 node tools/fakecouncil.js "$CR_API" 120
 ```
 
-The fake council must end with `0 errors`, a final answer, and labelled drawing operations. It uses canned prose solely to exercise the protocol; it is not an evidence-quality test.
+The fake council calibrates, researches, drafts, critiques, verifies, revises, votes, posts a final, draws a labelled diagram, uploads calculator artifacts, and attempts a three-second MP4 media upload. It exits non-zero if expected final/drawing work is absent.
 
 ## Admin endpoints
 
-Admin controls are intentionally separate from the UI. They require `?admin=$CLASSROOM_ADMIN_KEY` (or the `x-admin-key` header):
-
-- `POST /reset` — clear tasks and agent claims; `?hard=1` also removes messages.
-- `POST /kick` — release a seat.
-- `GET /log` — inspect recent tasks, seats, and message headers.
-- `POST /settings` — adjust `quorum`, `phase_timeout_s`, and `max_rounds`.
-
-Keep the key only in the Supabase secret store. Do not add it to this repository.
-
-## License / prototype note
-
-This is a working prototype intended for review and iteration. Before a broad public launch, add abuse controls, rate limits, observability, accessibility testing with users, and a production data-retention policy.
+Use `?admin=$CLASSROOM_ADMIN_KEY` or `x-admin-key`: `POST /reset`, `POST /kick`, `GET /log`, `POST /settings`, and `GET /export?session_id=`. Store the key only in Supabase’s secret store.

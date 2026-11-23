@@ -21,6 +21,10 @@
       this.progressQueue = [];
       this.progressTimer = null;
       this.dirty = false;
+      this.streamChain = Promise.resolve();
+      this.mediaLayer = document.createElement("div");
+      this.mediaLayer.className = "board-media-layer";
+      canvas.parentElement.append(this.mediaLayer);
       this.resizeObserver = new ResizeObserver(() => this.resize());
       this.resizeObserver.observe(canvas.parentElement);
       this.bindEvents();
@@ -174,7 +178,7 @@
         if (picked) this.dragImage = { ...picked, start: p, x: picked.row.op.x, y: picked.row.op.y };
         return;
       }
-      this.pointer = { id: e.pointerId, start: p, last: p, points: [p], pan: { ...this.pan } };
+      this.pointer = { id: e.pointerId, start: p, last: p, points: [p], pan: { ...this.pan }, streamPart: 0, lastStream: Date.now() };
       if (this.tool === "pan" || e.shiftKey || e.button === 1) this.canvas.style.cursor = "grabbing";
     }
 
@@ -201,6 +205,7 @@
       drag.last = p;
       // Sampling avoids huge freehand payloads while still preserving the natural curve.
       if (Math.hypot(p.x - drag.points[drag.points.length - 1].x, p.y - drag.points[drag.points.length - 1].y) > 1.4) drag.points.push(p);
+      if (this.tool === "pen" && Date.now() - drag.lastStream >= 250) { this.streamStroke(drag, false); drag.lastStream = Date.now(); }
       this.render({ preview: this.previewOp(drag) });
     }
 
@@ -220,8 +225,24 @@
       this.canvas.style.cursor = this.tool === "pan" ? "grab" : this.tool === "text" ? "text" : this.tool === "select" ? "default" : "crosshair";
       if (this.tool === "pan" || e.shiftKey) { this.render(); return; }
       const op = this.previewOp(drag);
-      if (op) this.commit([op]);
+      if (this.tool === "pen" && op) { this.streamStroke(drag, true); this.render(); }
+      else if (op) this.commit([op]);
       else this.render();
+    }
+
+    streamStroke(drag, done) {
+      const base = this.previewOp(drag); if (!base || !this.options.onStream) { if (done) this.commit([base]); return; }
+      const op = { ...base, stroke_id: `s-${Date.now()}-${drag.id}`, part: drag.streamPart++, done };
+      // Keep an id stable for the entire stroke.
+      if (!drag.strokeId) drag.strokeId = op.stroke_id;
+      op.stroke_id = drag.strokeId;
+      this.streamChain = this.streamChain.then(async () => {
+        const result = await this.options.onStream(op);
+        if (done) {
+          this.optimistic([{ t: "path", pts: base.pts, w: base.w, c: base.c, close: false }]);
+          if (result?.ops) this.reconcile(result.ops);
+        }
+      }).catch((error) => this.options.onError?.(error));
     }
 
     previewOp(drag) {
@@ -260,7 +281,7 @@
       const hidden = this.hiddenSeqs();
       let start = 0;
       this.rows.forEach((row, i) => { if (row.op?.t === "clear" && !hidden.has(row.seq)) start = i + 1; });
-      return this.rows.slice(start).filter((r) => !hidden.has(r.seq) && r.op?.t !== "undo" && r.op?.t !== "clear");
+      return this.rows.slice(start).filter((r) => !hidden.has(r.seq) && r.op?.t !== "undo" && r.op?.t !== "clear" && !(r.op?.t === "pointer" && r.op.expires_at && new Date(r.op.expires_at).getTime() < Date.now()));
     }
 
     render(extra = {}) {
@@ -273,6 +294,19 @@
       for (const row of this.activeRows()) this.drawOp(ctx, row.op);
       if (extra.preview) this.drawOp(ctx, extra.preview);
       if (extra.moving) this.drawOp(ctx, { ...extra.moving.row.op, x: extra.moving.previewX, y: extra.moving.previewY });
+      this.renderMedia(tr);
+    }
+
+    renderMedia(tr) {
+      const rows = this.activeRows().filter((r) => ["video", "model3d"].includes(r.op?.t));
+      this.mediaLayer.innerHTML = "";
+      for (const row of rows) {
+        const op = row.op, el = op.t === "video" ? document.createElement("video") : document.createElement("model-viewer");
+        el.className = "board-media"; el.style.left = `${tr.x + op.x * tr.scale}px`; el.style.top = `${tr.y + op.y * tr.scale}px`; el.style.width = `${op.w * tr.scale}px`; el.style.height = `${op.h * tr.scale}px`;
+        if (op.t === "video") { el.src = op.url; el.poster = op.poster || ""; el.controls = true; el.loop = true; el.muted = true; el.playsInline = true; }
+        else { el.setAttribute("src", op.url); el.setAttribute("camera-controls", ""); el.setAttribute("auto-rotate", ""); if (op.poster) el.setAttribute("poster", op.poster); }
+        this.mediaLayer.append(el);
+      }
     }
 
     drawOp(ctx, op) {
@@ -306,6 +340,12 @@
         ctx.fillStyle = "#111"; ctx.font = `${Math.max(8, op.size || 26)}px Georgia, serif`; ctx.fillText(op.tex || "", op.x, op.y);
       } else if (op.t === "image") {
         this.drawImage(ctx, op);
+      } else if (op.t === "note") {
+        ctx.fillStyle = op.fill || "#fff5bd"; ctx.fillRect(op.x, op.y, op.w, op.h); ctx.strokeStyle = op.c || "#f5b301"; ctx.strokeRect(op.x, op.y, op.w, op.h); ctx.fillStyle = "#17213b"; ctx.font = "20px DM Sans"; const lines = String(op.s || "").split(/\n/); lines.forEach((line, i) => ctx.fillText(line, op.x + 12, op.y + 30 + i * 24));
+      } else if (op.t === "highlight") {
+        ctx.globalAlpha = op.alpha || .25; ctx.fillStyle = op.c || "#f5b301"; ctx.fillRect(op.x, op.y, op.w, op.h);
+      } else if (op.t === "pointer") {
+        ctx.fillStyle = op.c || "#d7263d"; ctx.beginPath(); ctx.arc(op.x, op.y, 12, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = "#fff"; ctx.font = "12px DM Sans"; ctx.fillText(op.who || "", op.x + 16, op.y + 4);
       } else if (op.t === "group") {
         (op.ops || []).forEach((inner) => this.drawOp(ctx, inner));
       }

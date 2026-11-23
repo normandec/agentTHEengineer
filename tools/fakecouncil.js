@@ -15,6 +15,10 @@ if (!base) {
 }
 const started = Date.now();
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const { readFileSync, writeFileSync, unlinkSync } = require("node:fs");
+const { spawnSync } = require("node:child_process");
+const { tmpdir } = require("node:os");
+const { join } = require("node:path");
 let errors = 0;
 const agents = Array.from({ length: 10 }, (_, n) => ({ expectedSeat: n + 1, name: `fakecouncil-seat-${n + 1}`, token: null, lastSeq: 0, done: new Set() }));
 
@@ -53,7 +57,9 @@ async function claim(agent) {
   const claimed = await post("/claim", { name: agent.name });
   agent.token = claimed.token;
   if (claimed.seat !== agent.expectedSeat) throw new Error(`${agent.name} claimed seat ${claimed.seat}, expected ${agent.expectedSeat}`);
-  console.log(`claimed seat ${claimed.seat} (${claimed.role})`);
+  const inbox = await request(`/inbox?token=${encodeURIComponent(agent.token)}`);
+  if (inbox.calibration) await post("/calibrate", { answers: inbox.calibration.questions.map((q) => ({ id: q.id, answer: "" })), strengths: ["clear explanations"], weaknesses: ["long arithmetic"] }, agent.token);
+  console.log(`claimed and calibrated seat ${claimed.seat} (${claimed.role})`);
 }
 async function say(agent, task, kind, body, meta = {}) {
   const key = `${task.id}:${task.phase}:${task.round}:${kind}`;
@@ -62,6 +68,23 @@ async function say(agent, task, kind, body, meta = {}) {
   agent.done.add(key);
   console.log(`seat ${agent.expectedSeat} → ${kind} (${task.phase}, round ${task.round})`);
 }
+async function signedPut(uploadUrl, headers, bytes, mime) {
+  const response = await fetch(uploadUrl, { method: "PUT", headers: { "content-type": mime, ...(headers || {}) }, body: bytes });
+  if (!response.ok) throw new Error(`signed upload failed (${response.status})`);
+}
+async function artifact(agent, sessionId, name, mime, bytes, path) {
+  const begin = await post("/file/begin", { session_id: sessionId, name, mime, bytes: bytes.length, path, task_id: null }, agent.token);
+  await signedPut(begin.upload_url, begin.headers, bytes, mime); return post("/file/done", { file_id: begin.file_id }, agent.token);
+}
+async function sampleVideo(agent, sessionId, sheetId) {
+  const out = join(tmpdir(), `classroom-fake-${process.pid}.mp4`);
+  const made = spawnSync("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=0x17a2b8:s=320x180:d=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", out], { stdio: "ignore" });
+  const bytes = made.status === 0 ? readFileSync(out) : Buffer.from("AI CLASSROOM demo video placeholder");
+  try { unlinkSync(out); } catch (_) {}
+  const begin = await post("/media/begin", { session_id: sessionId, sheet_id: sheetId, filename: "heat-pump-cycle.mp4", mime: "video/mp4", bytes: bytes.length, caption: "Three-second heat-pump cycle animation." }, agent.token);
+  await signedPut(begin.upload_url, begin.headers, bytes, "video/mp4"); return post("/media/done", { media_id: begin.media_id }, agent.token);
+}
+
 async function draw(agent, task, sheet) {
   const key = `${task.id}:draw`;
   if (agent.done.has(key)) return;
@@ -80,6 +103,7 @@ async function draw(agent, task, sheet) {
     { t: "text", x: 90, y: 595, s: "Cold weather: larger temperature lift → lower COP", size: 22, c: "#d93025", align: "left" },
   ];
   await post("/draw", { sheet_id: sheet.id, ops }, agent.token);
+  await sampleVideo(agent, task.session_id, sheet.id);
   agent.done.add(key);
   console.log("seat 9 → drew labelled heat-pump diagram");
 }
@@ -90,7 +114,11 @@ async function act(agent, inbox) {
   const seat = agent.expectedSeat;
   if (task.needed === "note") {
     if (task.phase === "research") await say(agent, task, "note", sourceNote(seat), { sources: seat >= 2 && seat <= 4 ? [seat === 3 ? "https://www.iea.org/reports/the-future-of-heat-pumps" : "https://www.energy.gov/energysaver/heat-pump-systems"] : [] });
-    else if (seat === 8) await say(agent, task, "note", "Checked: COP = heat delivered / electric energy used. Example: 3 kWh / 1 kWh = COP 3. Units cancel, so the calculation is dimensionless. → OK.");
+    else if (seat === 8) {
+      await say(agent, task, "note", "Checked: COP = heat delivered / electric energy used. Example: 3 kWh / 1 kWh = COP 3. Units cancel, so the calculation is dimensionless. → OK.");
+      const artifactKey = `${task.id}:calculator-artifacts`;
+      if (!agent.done.has(artifactKey)) { await artifact(agent, task.session_id, "cop-check.csv", "text/csv", Buffer.from("electricity_kwh,heat_kwh,cop\n1,3,3\n"), "outputs/csv"); await artifact(agent, task.session_id, "cop-plot.png", "image/png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL3VwAAAABJRU5ErkJggg==", "base64"), "outputs/plots"); agent.done.add(artifactKey); }
+    }
     return;
   }
   if (task.needed === "draft") return say(agent, task, "draft", draft(task.round), { sources: ["https://www.energy.gov/energysaver/heat-pump-systems", "https://www.iea.org/reports/the-future-of-heat-pumps"] });
