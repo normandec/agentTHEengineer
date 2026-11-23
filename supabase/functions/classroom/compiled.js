@@ -57,7 +57,7 @@ async function putSettings(patch) {
   return next;
 }
 async function insertMessage(row) {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 12; attempt++) {
     const { data: maxRow } = await sb.from("cr_messages").select("seq").eq("session_id", row.session_id).order("seq", { ascending: false }).limit(1).maybeSingle();
     const seq = (maxRow?.seq ?? 0) + 1;
     const { data, error } = await sb.from("cr_messages").insert({ ...row, seq }).select().single();
@@ -66,7 +66,9 @@ async function insertMessage(row) {
       console.error("insertMessage", error);
       return null;
     }
+    await new Promise((resolve) => setTimeout(resolve, 12 + Math.floor(Math.random() * 30) + attempt * 10));
   }
+  console.error("insertMessage exhausted sequence retries", row.session_id);
   return null;
 }
 async function insertOps(sheetId, author, ops) {

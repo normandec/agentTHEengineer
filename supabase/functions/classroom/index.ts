@@ -82,7 +82,10 @@ async function putSettings(patch: Record<string, number>) {
 // Seq allocation (per-session messages, per-sheet ops) with unique-retry
 // ---------------------------------------------------------------------------
 async function insertMessage(row: Record<string, unknown>): Promise<any | null> {
-  for (let attempt = 0; attempt < 4; attempt++) {
+  // Sequence numbers are scoped to a session, so several seats can legitimately
+  // race for the next one. Re-read and use jittered retries rather than dropping
+  // a council contribution when the unique session/sequence constraint fires.
+  for (let attempt = 0; attempt < 12; attempt++) {
     const { data: maxRow } = await sb
       .from("cr_messages").select("seq")
       .eq("session_id", row.session_id as string)
@@ -91,7 +94,9 @@ async function insertMessage(row: Record<string, unknown>): Promise<any | null> 
     const { data, error } = await sb.from("cr_messages").insert({ ...row, seq }).select().single();
     if (!error) return data;
     if ((error as any).code !== "23505") { console.error("insertMessage", error); return null; }
+    await new Promise((resolve) => setTimeout(resolve, 12 + Math.floor(Math.random() * 30) + attempt * 10));
   }
+  console.error("insertMessage exhausted sequence retries", row.session_id);
   return null;
 }
 async function insertOps(sheetId: string, author: string, ops: unknown[]): Promise<any[]> {
