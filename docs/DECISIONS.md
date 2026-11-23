@@ -33,6 +33,8 @@
 - `?fresh=1` sets a snapshot request visible to the next browser poll. The browser rasterizes immediately and agents retry the PNG URL; this bridge is necessary because a server cannot command an arbitrary static browser to capture synchronously.
 - Canvas renders base vector ops. Video and GLB model ops use positioned DOM media overlays; `model-viewer` is loaded from a small CDN module.
 - UI preferences (appearance, selected council mode, follow-new-message behavior, and voice detail) stay in browser local storage only. An admin key is read only from the current page query string, forwarded as an `x-admin-key` header to the configured Function, and never persisted. The page explicitly uses a strict-origin referrer policy to avoid passing that query value to external links.
+- Chat polling uses keyed turn nodes instead of clearing the complete log. A reader is followed only when already at the newest message or after sending a question; otherwise a visible Jump to latest control preserves their reading position. Focus view is local to the current tab and exits with Escape.
+- Browser speech detects each council response from Unicode script and language markers, with an agent-provided BCP-47 tag as a short-text fallback. The Web Speech API is used only with an installed voice that matches that detected language; it deliberately keeps a response as text rather than falling back to an unrelated English voice.
 
 ## Known boundaries
 
