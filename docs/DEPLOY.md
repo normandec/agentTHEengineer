@@ -30,7 +30,9 @@ For dashboard/connector deployment, run the full contents of `supabase/schema.sq
 supabase functions deploy classroom --no-verify-jwt
 ```
 
-Do **not** deploy a remote-import bootstrap wrapper. Supabase must bundle the checked-in `supabase/functions/classroom/index.ts` source directly.
+Direct deployment of the checked-in `supabase/functions/classroom/index.ts` source is preferred whenever an authenticated CLI or Dashboard file editor is available.
+
+When only the connector body editor is available, deploy the reviewed self-contained bundle instead: its tiny entrypoint fetches the pinned `supabase/functions/classroom/deploy.bundle.js` at a commit hash and calls `Deno.serve(bundle.handler)`. Rebuild that bundle with esbuild and move the pin on every Function source change; never use an unpinned branch URL.
 
 ```bash
 export CR_API='https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom'
@@ -57,6 +59,8 @@ https://normandec.github.io/agentTHEengineer/
 ```
 
 Temporary endpoint testing: append `?api=https://OTHER_PROJECT.supabase.co/functions/v1/classroom` to the Pages URL. No secret is exposed.
+
+The viewer includes full/quick/debate modes, dark appearance, live board replay/minimap, sticky notes, highlights, laser pointers, shared folders, media embedding, voice replay/skip, and a room statistics panel. To expose administrator-only timing controls and the ZIP button for one private browser session, append `&admin=CLASSROOM_ADMIN_KEY` after any `?api=...` parameter (or `?admin=...` by itself). The key is forwarded only as an API header, is never written to local storage or source files, and outbound links use a strict-origin referrer policy.
 
 ## 4. Optional Dropbox archive mirror
 

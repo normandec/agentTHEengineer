@@ -2,17 +2,21 @@
 (() => {
   "use strict";
   const $ = (selector) => document.querySelector(selector);
-  const API_OVERRIDE = new URLSearchParams(location.search).get("api");
+  const pageParams = new URLSearchParams(location.search);
+  const API_OVERRIDE = pageParams.get("api");
   const API = String(API_OVERRIDE || window.CR_API || "").replace(/\/$/, "");
+  // An administrator may intentionally open the room with ?admin=... . The key is
+  // never committed or persisted; it is forwarded only to the configured Function.
+  const ADMIN_KEY = pageParams.get("admin") || "";
   const storageKey = `ai-classroom-session:${API}`;
-  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], media: [], polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set() };
+  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null };
   const els = {
     chat: $("#chat-log"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count")
   };
 
   function api(path, options = {}) {
     if (!API) return Promise.reject(new Error("No API URL is configured. Set window.CR_API in docs/config.js."));
-    const headers = { ...(options.body ? { "content-type": "application/json" } : {}), ...(options.headers || {}) };
+    const headers = { ...(options.body ? { "content-type": "application/json" } : {}), ...(ADMIN_KEY ? { "x-admin-key": ADMIN_KEY } : {}), ...(options.headers || {}) };
     return fetch(`${API}${path}`, { ...options, headers }).then(async (response) => {
       const raw = await response.text();
       let payload = null;
@@ -33,6 +37,34 @@
     state.toastTimer = setTimeout(() => els.toast.classList.remove("show"), ms);
   }
   function showNotice(message) { els.notice.hidden = !message; els.notice.textContent = message || ""; }
+  function applyTheme(theme = state.theme) {
+    state.theme = theme === "dark" ? "dark" : "light";
+    document.documentElement.classList.toggle("theme-dark", state.theme === "dark");
+    localStorage.setItem("ai-classroom-theme", state.theme);
+    const button = $("#theme-button");
+    if (button) { button.textContent = state.theme === "dark" ? "☀" : "◐"; button.title = state.theme === "dark" ? "Use light appearance" : "Use dark appearance"; }
+  }
+  function applyMode(mode = state.mode) {
+    state.mode = ["full", "quick", "debate"].includes(mode) ? mode : "full";
+    localStorage.setItem("ai-classroom-mode", state.mode);
+    const button = $("#mode-button"); if (button) button.textContent = `${state.mode[0].toUpperCase()}${state.mode.slice(1)} mode`;
+    document.querySelectorAll("#mode-options input").forEach((input) => { input.checked = input.value === state.mode; });
+  }
+  function formatSeconds(seconds) { const n = Math.max(0, Number(seconds) || 0); return n >= 60 ? `${Math.floor(n / 60)}m ${Math.round(n % 60)}s` : `${Math.round(n)}s`; }
+  async function refreshStats() {
+    try {
+      const stats = await api("/stats"); state.stats = stats;
+      $("#stat-questions").textContent = stats.questions_answered ?? "—";
+      $("#stat-time").textContent = formatSeconds(stats.mean_deliberation_s);
+      $("#stat-online").textContent = `${state.council.filter((seat) => seat.status !== "offline").length}/10`;
+      if (ADMIN_KEY) {
+        $("#admin-settings").hidden = false;
+        $("#setting-quorum").value = state.settings.quorum ?? "";
+        $("#setting-phase").value = state.settings.phase_timeout_s ?? "";
+        $("#setting-revise").value = state.settings.revise_timeout_s ?? "";
+      }
+    } catch (error) { toast(`Could not load room statistics: ${error.message}`); }
+  }
 
   // Markdown deliberately permits only output generated here. AI text is escaped before markup is added.
   function markdown(raw) {
@@ -173,7 +205,7 @@
         if (chunk.signals.length) els.chat.append(deliberationDetails(chunk.signals, true));
       }
     }
-    els.chat.scrollTop = els.chat.scrollHeight;
+    if (state.autoscroll) els.chat.scrollTop = els.chat.scrollHeight;
   }
 
   function renderSheets() {
@@ -200,19 +232,41 @@
     if (!state.sessionId) return;
     try {
       const [fileData, mediaData] = await Promise.all([api(`/files?session_id=${state.sessionId}`), api(`/media?session_id=${state.sessionId}`)]);
-      state.files = fileData.files || []; state.media = mediaData.media || []; renderAssets();
+      state.files = fileData.files || []; state.folders = fileData.folders || []; state.media = mediaData.media || []; renderAssets();
     } catch (_) { /* Asset lists are supplemental; polling chat still works without them. */ }
   }
   function humanBytes(bytes) { const n=Number(bytes)||0; return n < 1024*1024 ? `${Math.round(n/1024)} KB` : `${(n/1024/1024).toFixed(1)} MB`; }
   function renderAssets() {
     els.filesCount.textContent = state.files.length;
-    els.filesList.innerHTML = state.files.length ? "" : `<p class="eyebrow">No files yet</p>`;
-    for (const file of state.files) { const row=document.createElement("article"); row.className="file-item"; const icon=file.learned?"📚":"📄"; row.innerHTML=`<span>${icon}</span><div><b>${escapeHtml(file.name)}</b><small>${escapeHtml(file.path || "root")} · ${humanBytes(file.bytes)} · ${escapeHtml(file.author || "")}</small></div><a href="${escapeHtml(file.url || "#")}" target="_blank" download>⇩</a>`; const learn=document.createElement("button"); learn.type="button"; learn.textContent=file.learned?"Un-learn":"Learn"; learn.addEventListener("click",async()=>{try{await post("/file/learn",{file_id:file.id,learned:!file.learned});await refreshAssets();toast(file.learned?"Removed from knowledge.":"Added to knowledge.");}catch(e){toast(e.message)}});row.append(learn); els.filesList.append(row); }
-    els.mediaList.innerHTML=state.media.length?"":`<p class="eyebrow">No media yet</p>`;
-    for(const item of state.media){const row=document.createElement("article");row.className="file-item";row.innerHTML=`<span>${item.kind==="video"?"▶":item.kind==="model3d"?"◇":"▧"}</span><div><b>${escapeHtml(item.filename)}</b><small>${escapeHtml(item.caption||item.kind)} · ${humanBytes(item.bytes)}</small></div><a href="${escapeHtml(item.url||"#")}" target="_blank">Open</a>`;els.mediaList.append(row);}
+    const paths = new Set(state.folders.map((folder) => folder.path));
+    for (const file of state.files) {
+      const bits = String(file.path || "").split("/").filter(Boolean);
+      for (let i = 1; i <= bits.length; i++) paths.add(bits.slice(0, i).join("/"));
+    }
+    const folders = [...paths].sort();
+    const currentFiles = state.files.filter((file) => String(file.path || "") === state.fileFolder);
+    els.filesList.innerHTML = `<div class="file-tools"><button type="button" id="new-folder-button">+ Folder</button><span>${escapeHtml(state.fileFolder || "Shared files")}</span></div><div class="folder-tree"><button type="button" class="${state.fileFolder ? "" : "active"}" data-folder="">⌂ Shared files</button>${folders.map((path) => `<button type="button" class="${path === state.fileFolder ? "active" : ""}" data-folder="${escapeHtml(path)}">⌁ ${escapeHtml(path)}</button>`).join("")}</div>`;
+    const list = document.createElement("div"); list.className = "file-rows";
+    if (!currentFiles.length) list.innerHTML = `<p class="eyebrow">No files in this folder</p>`;
+    for (const file of currentFiles) {
+      const row = document.createElement("article"); row.className = "file-item";
+      const icon = file.learned ? "📚" : "📄";
+      row.innerHTML = `<span>${icon}</span><div><b>${escapeHtml(file.name)}</b><small>${humanBytes(file.bytes)} · ${escapeHtml(file.author || "You")}</small></div><a href="${escapeHtml(file.url || "#")}" target="_blank" download>⇩</a>`;
+      const learn = document.createElement("button"); learn.type = "button"; learn.textContent = file.learned ? "Un-learn" : "Learn";
+      learn.addEventListener("click", async () => { try { await post("/file/learn", { file_id: file.id, learned: !file.learned }); await refreshAssets(); toast(file.learned ? "Removed from knowledge." : "Added to knowledge."); } catch (error) { toast(error.message); } });
+      const move = document.createElement("button"); move.type = "button"; move.textContent = "Move";
+      move.addEventListener("click", async () => { const path = window.prompt("Move file to folder (blank for Shared files):", file.path || ""); if (path === null) return; try { await post("/files/move", { session_id: state.sessionId, file_id: file.id, path }); state.fileFolder = path.trim().replace(/^\/+|\/+$/g, ""); await refreshAssets(); } catch (error) { toast(`Could not move ${file.name}: ${error.message}`); } });
+      row.append(learn, move); list.append(row);
+    }
+    els.filesList.append(list);
+    els.filesList.querySelectorAll("[data-folder]").forEach((button) => button.addEventListener("click", () => { state.fileFolder = button.dataset.folder || ""; renderAssets(); }));
+    $("#new-folder-button").addEventListener("click", async () => { const path = window.prompt("Name a shared folder:", state.fileFolder ? `${state.fileFolder}/` : ""); if (!path?.trim()) return; try { await post("/files/mkdir", { session_id: state.sessionId, path }); state.fileFolder = path.trim().replace(/^\/+|\/+$/g, ""); await refreshAssets(); toast("Shared folder created."); } catch (error) { toast(`Could not create folder: ${error.message}`); } });
+    els.mediaList.innerHTML = state.media.length ? "" : `<p class="eyebrow">No media yet</p>`;
+    for (const item of state.media) { const row = document.createElement("article"); row.className = "file-item"; row.innerHTML = `<span>${item.kind === "video" ? "▶" : item.kind === "model3d" ? "◇" : item.kind === "audio" ? "♪" : "▧"}</span><div><b>${escapeHtml(item.filename)}</b><small>${escapeHtml(item.caption || item.kind)} · ${humanBytes(item.bytes)}</small></div><a href="${escapeHtml(item.url || "#")}" target="_blank">Open</a>`; els.mediaList.append(row); }
   }
 
   const board = new window.ClassroomBoard($("#board"), {
+    minimap: $("#minimap"),
     onCommit: async (ops) => {
       if (!state.activeSheet) throw new Error("There is no active sheet yet.");
       els.sync.textContent = "saving…";
@@ -225,8 +279,13 @@
       if (op.done) state.pngDirty = true;
       return response;
     },
+    onPointer: async (op) => {
+      if (!state.activeSheet) return;
+      await post(`/sheet/${state.activeSheet.id}/ops`, { ops: [op], author: "user" });
+    },
     onError: (error) => { els.sync.textContent = "not saved"; toast(`Board change not saved: ${error.message}`); },
     onInfo: toast,
+    onReplay: (playing) => { const b = $("#replay-button"); b.classList.toggle("active", playing); b.title = playing ? "Stop sheet replay" : "Replay this sheet from the beginning"; },
     onZoom: (zoom) => { els.zoom.textContent = `${Math.round(zoom * 100)}%`; },
     onRender: ({ count, local, dirty }) => { els.ops.textContent = `${count} operation${count === 1 ? "" : "s"}`; els.empty.style.opacity = count ? "0" : "1"; if (local || dirty) state.pngDirty = true; }
   });
@@ -237,6 +296,7 @@
     const fromList = state.sheets.find((sheet) => sheet.id === id);
     if (fromList) Object.assign(fromList, data.sheet);
     board.setRows(data.ops || []);
+    board.setLivePointer(data.sheet.state?.pointer || null);
     els.sheetName.textContent = data.sheet.title;
     els.sync.textContent = "synced";
     renderSheets();
@@ -277,11 +337,13 @@
       }
       state.task = data.task;
       state.sheets = data.sheets || [];
+      state.settings = data.settings || state.settings;
       renderCouncil(data.council || []); renderPhase(); renderChat(); renderSheets();
       els.ticker.textContent = window.ClassroomUI?.ticker(data.messages || [], state.task) || "Council ready";
       for (const message of data.messages || []) if (message.kind === "speak" && !state.seenSpeak.has(message.seq)) { state.seenSpeak.add(message.seq); voice.enqueue(message); }
       if (!state.activeSheet && state.sheets.length) await openSheet(state.sheets[state.sheets.length - 1].id);
       const activeMeta = state.sheets.find((sheet) => sheet.id === state.activeSheet?.id);
+      if (activeMeta?.state?.pointer) board.setLivePointer(activeMeta.state.pointer);
       if (activeMeta?.state?.fresh_requested_at) { state.pngDirty = true; await snapshot(true); }
       await pollOps(); await refreshAssets();
       if (first) els.question.focus();
@@ -294,10 +356,12 @@
   async function ask(value) {
     const prompt = String(value || "").trim();
     if (!prompt) return;
+    const suppliedMode = /^\/(quick|debate)\b/i.test(prompt);
+    const taskText = suppliedMode || state.mode === "full" ? prompt : `/${state.mode} ${prompt}`;
     if (!state.sessionId) await createSession();
     els.ask.disabled = true; els.question.disabled = true;
     try {
-      await post("/ask", { session_id: state.sessionId, text: prompt, sheet_id: state.activeSheet?.id || null });
+      await post("/ask", { session_id: state.sessionId, text: taskText, sheet_id: state.activeSheet?.id || null });
       els.question.value = ""; await poll();
     } catch (error) { toast(`The question was not sent: ${error.message}`, 5000); }
     finally { els.ask.disabled = false; els.question.disabled = false; els.question.focus(); }
@@ -329,8 +393,12 @@
 
   async function uploadFiles(fileList, learned = false) {
     for (const file of [...fileList]) {
-      try { await files.upload(file, { learned, sheetId: state.activeSheet?.id || null, taskId: state.task?.id || null }); toast(`${file.name} is available to the council.`); }
-      catch (error) { toast(`Could not upload ${file.name}: ${error.message}`, 5000); }
+      const ext = (file.name.split(".").pop() || "").toLowerCase();
+      const media = /^(image|video|audio)\//.test(file.type) || ["glb", "gltf", "stl", "obj"].includes(ext);
+      try {
+        await files.upload(file, { learned: learned && !media, media, sheetId: media ? state.activeSheet?.id || null : null, taskId: state.task?.id || null, path: media ? "" : state.fileFolder, caption: media ? `${file.name} shared by the learner.` : "" });
+        toast(media ? `${file.name} is embedded in the room.` : `${file.name} is available to the council.`);
+      } catch (error) { toast(`Could not upload ${file.name}: ${error.message}`, 5000); }
     }
   }
 
@@ -349,9 +417,38 @@
     catch { toast("Could not make a PNG from this sheet."); }
   }
 
+  async function exportSession() {
+    if (!state.sessionId) return;
+    if (!ADMIN_KEY) { toast("Open the room with ?admin=YOUR_ADMIN_KEY to export a session.", 5200); return; }
+    try {
+      const response = await fetch(`${API}/export?session_id=${encodeURIComponent(state.sessionId)}`, { headers: { "x-admin-key": ADMIN_KEY } });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || `Export failed (${response.status})`); }
+      const blob = await response.blob(), link = document.createElement("a");
+      link.href = URL.createObjectURL(blob); link.download = `ai-classroom-${state.sessionId}.zip`; link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+    } catch (error) { toast(`Could not export this session: ${error.message}`, 5000); }
+  }
+  async function saveAdminSettings() {
+    if (!ADMIN_KEY) return;
+    const settings = { quorum: Number($("#setting-quorum").value), phase_timeout_s: Number($("#setting-phase").value), revise_timeout_s: Number($("#setting-revise").value) };
+    try { const data = await post("/settings", settings); state.settings = data.settings || state.settings; toast("Room timing saved for future tasks."); }
+    catch (error) { toast(`Could not save room timing: ${error.message}`, 5000); }
+  }
+
   // Wire page controls.
+  applyTheme(); applyMode();
   $("#sound-button").textContent = voice.enabled ? "🔈 Sound on" : "🔇 Sound off";
   $("#sound-button").addEventListener("click", () => voice.setEnabled(!voice.enabled));
+  $("#voice-skip-button").addEventListener("click", () => { voice.skip(); toast("Voice skipped."); });
+  $("#theme-button").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
+  $("#mode-button").addEventListener("click", () => $("#mode-dialog").showModal());
+  $("#close-mode").addEventListener("click", () => $("#mode-dialog").close());
+  document.querySelectorAll("#mode-options input").forEach((input) => input.addEventListener("change", () => { applyMode(input.value); $("#mode-dialog").close(); toast(`${input.value[0].toUpperCase()}${input.value.slice(1)} council mode selected.`); }));
+  $("#settings-button").addEventListener("click", async () => { $("#autoscroll-toggle").checked = state.autoscroll; $("#voice-verbose-toggle").checked = voice.verbose; $("#settings-dialog").showModal(); await refreshStats(); });
+  $("#close-settings").addEventListener("click", () => $("#settings-dialog").close());
+  $("#autoscroll-toggle").addEventListener("change", (event) => { state.autoscroll = event.target.checked; localStorage.setItem("ai-classroom-autoscroll", state.autoscroll ? "on" : "off"); });
+  $("#voice-verbose-toggle").addEventListener("change", (event) => voice.setVerbose(event.target.checked));
+  $("#refresh-stats").addEventListener("click", refreshStats); $("#save-settings").addEventListener("click", saveAdminSettings); $("#export-session").addEventListener("click", exportSession);
   $("#mic-button").addEventListener("click", () => { try { voice.dictate(els.question); } catch (error) { toast(error.message); } });
   els.filesInput.addEventListener("change", () => { uploadFiles(els.filesInput.files); els.filesInput.value = ""; });
   $("#files-button").addEventListener("click", () => { openDrawer(); switchDrawer("files"); });
@@ -360,7 +457,7 @@
   document.addEventListener("dragover", (e) => { e.preventDefault(); els.drop.hidden = false; });
   document.addEventListener("dragleave", (e) => { if(e.target===document.documentElement) els.drop.hidden=true; });
   document.addEventListener("drop", (e) => { e.preventDefault(); els.drop.hidden=true; if(e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files, e.shiftKey); });
-  document.addEventListener("keydown", (e) => { if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();ask(els.question.value);} if(e.target.matches("textarea,input"))return; if(e.key.toLowerCase()==="n")newSheet(); if(e.key.toLowerCase()==="p")document.querySelector('[data-tool="pen"]').click(); if(e.key.toLowerCase()==="e")document.querySelector('[data-tool="eraser"]').click(); if(e.key===" ")document.querySelector('[data-tool="pan"]').click(); });
+  document.addEventListener("keydown", (e) => { if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();ask(els.question.value);} if(e.target.matches("textarea,input"))return; if(e.key.toLowerCase()==="n")newSheet(); if(e.key.toLowerCase()==="p")document.querySelector('[data-tool="pen"]').click(); if(e.key.toLowerCase()==="e")document.querySelector('[data-tool="eraser"]').click(); if(e.key.toLowerCase()==="h")document.querySelector('[data-tool="highlight"]').click(); if(e.key.toLowerCase()==="l")document.querySelector('[data-tool="laser"]').click(); if(e.key.toLowerCase()==="r")board.replay(); if(e.key===" ")document.querySelector('[data-tool="pan"]').click(); });
   function switchDrawer(tab) { state.drawerTab=tab; document.querySelectorAll("[data-drawer-tab]").forEach((b)=>b.classList.toggle("active",b.dataset.drawerTab===tab)); document.querySelectorAll(".drawer-panel").forEach((p)=>p.hidden=p.id!==`${tab}-list`); }
   els.form.addEventListener("submit", (event) => { event.preventDefault(); ask(els.question.value); });
   $("#new-session").addEventListener("click", () => { if (confirm("Start a new session? This keeps older sessions in the database, but switches this browser to a clean room.")) createSession(); });
@@ -368,6 +465,7 @@
   $("#about-button").addEventListener("click", () => $("#about-dialog").showModal()); $("#close-about").addEventListener("click", () => $("#about-dialog").close());
   $("#ask-sheet").addEventListener("click", () => ask("Please explain what is shown on the current sheet and how it relates to our discussion."));
   $("#download-png").addEventListener("click", downloadPNG); $("#undo-button").addEventListener("click", () => board.undoLatest());
+  $("#replay-button").addEventListener("click", () => board.replayLimit === null ? board.replay() : board.stopReplay());
   $("#zoom-in").addEventListener("click", () => board.setZoom(board.zoom * 1.15)); $("#zoom-out").addEventListener("click", () => board.setZoom(board.zoom / 1.15)); els.zoom.addEventListener("click", () => board.resetView());
   els.image.addEventListener("change", () => uploadImage(els.image.files?.[0]));
   $("#grid-toggle").addEventListener("click", () => { $("#board-wrap").classList.toggle("no-grid"); $("#grid-toggle").classList.toggle("active"); });

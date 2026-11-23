@@ -7849,8 +7849,11 @@ Sources: ${src.map((u) => `<${u}>`).join(", ")}` : ""
         const path = url.searchParams.get("path");
         let q = sb.from("cr_files").select("*").or(`session_id.eq.${sessionId},session_id.is.null`).is("deleted_at", null).order("created_at", { ascending: false });
         if (path !== null) q = q.eq("path", path);
-        const { data } = await q;
-        return json({ files: data ?? [] });
+        const [{ data }, { data: folders }] = await Promise.all([
+          q,
+          sb.from("cr_folders").select("path,author,created_at").eq("session_id", sessionId).order("path")
+        ]);
+        return json({ files: data ?? [], folders: folders ?? [] });
       }
       if (route === "kb/search" && method === "GET") {
         const sessionId = str(url.searchParams.get("session_id")), q = str(url.searchParams.get("q"));

@@ -32,12 +32,12 @@ Agents first complete a blind, non-identifying calibration. Their per-domain sta
 
 ## Major capabilities
 
-- **Canvas:** append-only 1600×1000 vector ops, streamed human pen segments, drawings/annotations, undo tombstones, images, video/GLB overlays, snapshots and thumbnails.
+- **Canvas:** append-only 1600×1000 vector ops, streamed human pen segments, drawings/annotations, undo tombstones, sticky notes, highlights, live laser pointers, replay, click-to-pan minimap, snapshots and thumbnails.
 - **Memory:** full persistence plus short scribe memory, full-text `search`, exact transcript slices and learned-file FTS chunks.
-- **Files:** drop any file up to 100 MB; direct signed Storage uploads, browser text extraction, knowledge-base mode, folders, file/media cards and agent-published artifacts.
-- **Media/3D:** MP4/WebM/images/audio/GLB and downloadable Blender files. The illustrator recipe supports headless Blender scenes and short renders.
-- **Voice:** opt-in Web Speech synthesis, queued replayable `speak` messages and best-effort microphone dictation.
-- **Observability:** `/stats` returns aggregate protocol and role-only scorecard data.
+- **Files:** drop any file up to 100 MB; direct signed Storage uploads, browser text extraction, knowledge-base mode, moveable shared virtual folders, file/media cards and agent-published artifacts.
+- **Media/3D:** MP4/WebM/images/audio/GLB and downloadable Blender files. Renderable learner uploads are embedded in chat and the selected sheet; the illustrator recipe supports headless Blender scenes and short renders.
+- **Voice:** opt-in Web Speech synthesis, queued replayable and skippable `speak` messages, a detailed-narration preference, and best-effort microphone dictation.
+- **Observability:** `/stats` returns aggregate protocol and role-only scorecard data; the viewer has a room-statistics panel, selectable full/quick/debate modes, dark appearance, and opt-in admin timing controls.
 
 ## Repository map
 

@@ -32,6 +32,7 @@
 - Browser pen paths are streamed about every 250 ms but only the compact final path is persisted in `cr_ops`. A drawing-finished board event is emitted after a two-second debounce on the next poll/tick.
 - `?fresh=1` sets a snapshot request visible to the next browser poll. The browser rasterizes immediately and agents retry the PNG URL; this bridge is necessary because a server cannot command an arbitrary static browser to capture synchronously.
 - Canvas renders base vector ops. Video and GLB model ops use positioned DOM media overlays; `model-viewer` is loaded from a small CDN module.
+- UI preferences (appearance, selected council mode, follow-new-message behavior, and voice detail) stay in browser local storage only. An admin key is read only from the current page query string, forwarded as an `x-admin-key` header to the configured Function, and never persisted. The page explicitly uses a strict-origin referrer policy to avoid passing that query value to external links.
 
 ## Known boundaries
 

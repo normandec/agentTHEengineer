@@ -9,7 +9,11 @@
     }
     setEnabled(value) { this.enabled = !!value; localStorage.setItem("ai-classroom-sound", this.enabled ? "on" : "off"); if (!this.enabled) this.stop(); this.onState?.(this.enabled); }
     setVerbose(value) { this.verbose = !!value; localStorage.setItem("ai-classroom-voice-verbose", this.verbose ? "on" : "off"); }
-    enqueue(message) { if (!message?.body || !this.enabled || !("speechSynthesis" in window)) return; this.queue.push(message); this.next(); }
+    enqueue(message) {
+      if (!message?.body || !this.enabled || !("speechSynthesis" in window)) return;
+      const body = this.verbose ? message.body : String(message.body).slice(0, 520);
+      this.queue.push({ ...message, body }); this.next();
+    }
     next() {
       if (this.speaking || !this.enabled || !this.queue.length) return;
       const message = this.queue.shift(), utterance = new SpeechSynthesisUtterance(message.body);

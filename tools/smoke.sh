@@ -31,9 +31,11 @@ curl --fail-with-body --silent --show-error -X POST "$API/sheet/$SHEET/png" -H '
   -d "{\"data_url\":\"data:image/png;base64,$PIXEL\"}" | grep -q '"ok":true'
 curl --fail-with-body --silent --show-error --location "$API/sheet/$SHEET/png?fresh=1" >/dev/null
 
-printf '== memory, search, files/media lists and stats ==\n'
+printf '== memory, folders, files/media lists and stats ==\n'
 curl --fail-with-body --silent --show-error "$API/memory?session_id=$SID" | grep -q '"memory"'
-curl --fail-with-body --silent --show-error "$API/files?session_id=$SID" | grep -q '"files"'
+curl --fail-with-body --silent --show-error -X POST "$API/files/mkdir" -H 'content-type: application/json' \
+  -d "{\"session_id\":\"$SID\",\"path\":\"learner-notes\"}" | grep -q '"ok":true'
+curl --fail-with-body --silent --show-error "$API/files?session_id=$SID" | grep -q '"folders"'
 curl --fail-with-body --silent --show-error "$API/media?session_id=$SID" | grep -q '"media"'
 curl --fail-with-body --silent --show-error "$API/stats" | grep -q '"scorecards"'
 

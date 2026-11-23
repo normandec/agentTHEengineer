@@ -25,9 +25,15 @@
       this.mediaLayer = document.createElement("div");
       this.mediaLayer.className = "board-media-layer";
       canvas.parentElement.append(this.mediaLayer);
+      this.minimap = options.minimap || null;
+      this.minimapCtx = this.minimap?.getContext("2d") || null;
+      this.livePointer = null;
+      this.replayLimit = null;
+      this.replayTimer = null;
       this.resizeObserver = new ResizeObserver(() => this.resize());
       this.resizeObserver.observe(canvas.parentElement);
       this.bindEvents();
+      if (this.minimap) this.minimap.addEventListener("click", (event) => this.panFromMinimap(event));
       this.resize();
     }
 
@@ -94,8 +100,43 @@
       this.options.onZoom?.(this.zoom);
     }
     resetView() { this.zoom = 1; this.pan = { x: 0, y: 0 }; this.render(); this.options.onZoom?.(1); }
+    setLivePointer(pointer) {
+      this.livePointer = pointer && (!pointer.expires_at || new Date(pointer.expires_at).getTime() > Date.now()) ? pointer : null;
+      this.render();
+    }
+    panFromMinimap(event) {
+      if (!this.minimap) return;
+      const rect = this.minimap.getBoundingClientRect();
+      const x = clamp((event.clientX - rect.left) / rect.width * W, 0, W);
+      const y = clamp((event.clientY - rect.top) / rect.height * H, 0, H);
+      const canvasRect = this.canvas.getBoundingClientRect();
+      const scale = Math.min(canvasRect.width / W, canvasRect.height / H) * this.zoom;
+      this.pan.x = canvasRect.width / 2 - x * scale - (canvasRect.width - W * scale) / 2;
+      this.pan.y = canvasRect.height / 2 - y * scale - (canvasRect.height - H * scale) / 2;
+      this.render();
+    }
+    replay(interval = 130) {
+      this.stopReplay();
+      if (!this.rows.length) return this.options.onInfo?.("There is nothing on this sheet to replay yet.");
+      this.replayLimit = 0;
+      this.render();
+      this.options.onReplay?.(true);
+      const next = () => {
+        this.replayLimit += 1;
+        this.render();
+        if (this.replayLimit >= this.rows.length) { this.stopReplay(); return; }
+        this.replayTimer = window.setTimeout(next, interval);
+      };
+      this.replayTimer = window.setTimeout(next, interval);
+    }
+    stopReplay() {
+      if (this.replayTimer) window.clearTimeout(this.replayTimer);
+      const wasReplaying = this.replayLimit !== null;
+      this.replayTimer = null; this.replayLimit = null;
+      if (wasReplaying) { this.render(); this.options.onReplay?.(false); }
+    }
 
-    setRows(rows) {
+    setRows(rows) { this.stopReplay();
       this.rows = (rows || []).map((row) => ({ ...row, op: row.op || row }));
       this.progressQueue = [];
       this.dirty = false;
@@ -173,6 +214,11 @@
         if (words?.trim()) this.commit([{ t: "text", x: p.x, y: p.y, s: words.trim(), size: 23, c: this.color, align: "left" }]);
         return;
       }
+      if (this.tool === "sticky") {
+        const words = window.prompt("Write a note for the room:");
+        if (words?.trim()) this.commit([{ t: "note", x: p.x, y: p.y, w: 260, h: 150, s: words.trim(), c: "#d29b12", fill: "#fff3b8" }]);
+        return;
+      }
       if (this.tool === "select") {
         const picked = this.pickImage(p);
         if (picked) this.dragImage = { ...picked, start: p, x: picked.row.op.x, y: picked.row.op.y };
@@ -202,6 +248,13 @@
         this.render();
         return;
       }
+      if (this.tool === "laser") {
+        drag.last = p;
+        if (Date.now() - (drag.lastLaser || 0) > 80) { drag.lastLaser = Date.now(); this.sendPointer(p); }
+        this.livePointer = { t: "pointer", x: p.x, y: p.y, who: "You", c: this.color, expires_at: new Date(Date.now() + 900).toISOString() };
+        this.render();
+        return;
+      }
       drag.last = p;
       // Sampling avoids huge freehand payloads while still preserving the natural curve.
       if (Math.hypot(p.x - drag.points[drag.points.length - 1].x, p.y - drag.points[drag.points.length - 1].y) > 1.4) drag.points.push(p);
@@ -224,14 +277,21 @@
       this.pointer = null;
       this.canvas.style.cursor = this.tool === "pan" ? "grab" : this.tool === "text" ? "text" : this.tool === "select" ? "default" : "crosshair";
       if (this.tool === "pan" || e.shiftKey) { this.render(); return; }
+      if (this.tool === "laser") { this.sendPointer(drag.last || drag.start); this.render(); return; }
       const op = this.previewOp(drag);
       if (this.tool === "pen" && op) { this.streamStroke(drag, true); this.render(); }
       else if (op) this.commit([op]);
       else this.render();
     }
 
+    sendPointer(point) {
+      if (!this.options.onPointer || !point) return;
+      const op = { t: "pointer", x: point.x, y: point.y, who: "You", c: this.color, expires_at: new Date(Date.now() + 1200).toISOString() };
+      Promise.resolve(this.options.onPointer(op)).catch((error) => this.options.onError?.(error));
+    }
+
     streamStroke(drag, done) {
-      const base = this.previewOp(drag); if (!base || !this.options.onStream) { if (done) this.commit([base]); return; }
+      const base = this.previewOp(drag); if (!base || !this.options.onStream) { if (done && base) this.commit([base]); return; }
       const op = { ...base, stroke_id: `s-${Date.now()}-${drag.id}`, part: drag.streamPart++, done };
       // Keep an id stable for the entire stroke.
       if (!drag.strokeId) drag.strokeId = op.stroke_id;
@@ -247,6 +307,7 @@
 
     previewOp(drag) {
       if (this.tool === "eraser") return { t: "erase", pts: drag.points.map((p) => [p.x, p.y]), w: Math.max(18, this.width * 6) };
+      if (this.tool === "highlight") return { t: "highlight", x: Math.min(drag.start.x, drag.last.x), y: Math.min(drag.start.y, drag.last.y), w: Math.abs(drag.last.x - drag.start.x), h: Math.abs(drag.last.y - drag.start.y), c: this.color, alpha: .24 };
       if (this.tool === "pen") {
         const pts = drag.points.length > 1 ? drag.points : [drag.start, { x: drag.start.x + .1, y: drag.start.y + .1 }];
         return { t: "path", pts: pts.map((p) => [p.x, p.y]), w: this.width, c: this.color, close: false };
@@ -278,10 +339,12 @@
     }
 
     activeRows() {
-      const hidden = this.hiddenSeqs();
+      const source = this.replayLimit === null ? this.rows : this.rows.slice(0, this.replayLimit);
+      const hidden = new Set();
+      for (const row of source) if (row.op?.t === "undo" && Number.isFinite(row.op.seq)) hidden.add(row.op.seq);
       let start = 0;
-      this.rows.forEach((row, i) => { if (row.op?.t === "clear" && !hidden.has(row.seq)) start = i + 1; });
-      return this.rows.slice(start).filter((r) => !hidden.has(r.seq) && r.op?.t !== "undo" && r.op?.t !== "clear" && !(r.op?.t === "pointer" && r.op.expires_at && new Date(r.op.expires_at).getTime() < Date.now()));
+      source.forEach((row, i) => { if (row.op?.t === "clear" && !hidden.has(row.seq)) start = i + 1; });
+      return source.slice(start).filter((r) => !hidden.has(r.seq) && r.op?.t !== "undo" && r.op?.t !== "clear" && !(r.op?.t === "pointer" && r.op.expires_at && new Date(r.op.expires_at).getTime() < Date.now()));
     }
 
     render(extra = {}) {
@@ -292,9 +355,28 @@
       const tr = this.transform();
       ctx.setTransform(dpr * tr.scale, 0, 0, dpr * tr.scale, dpr * tr.x, dpr * tr.y);
       for (const row of this.activeRows()) this.drawOp(ctx, row.op);
+      if (this.livePointer && (!this.livePointer.expires_at || new Date(this.livePointer.expires_at).getTime() > Date.now())) this.drawOp(ctx, this.livePointer);
       if (extra.preview) this.drawOp(ctx, extra.preview);
       if (extra.moving) this.drawOp(ctx, { ...extra.moving.row.op, x: extra.moving.previewX, y: extra.moving.previewY });
       this.renderMedia(tr);
+      this.renderMinimap(tr);
+    }
+
+    renderMinimap(tr) {
+      if (!this.minimapCtx || !this.minimap) return;
+      const ctx = this.minimapCtx, width = this.minimap.width, height = this.minimap.height;
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#fffefa"; ctx.fillRect(0, 0, width, height);
+      const scale = Math.min(width / W, height / H), x = (width - W * scale) / 2, y = (height - H * scale) / 2;
+      ctx.setTransform(scale, 0, 0, scale, x, y);
+      for (const row of this.activeRows()) this.drawOp(ctx, row.op);
+      const view = this.canvas.getBoundingClientRect();
+      const vx = clamp((-tr.x) / tr.scale, 0, W), vy = clamp((-tr.y) / tr.scale, 0, H);
+      const vw = Math.min(W, view.width / tr.scale), vh = Math.min(H, view.height / tr.scale);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.strokeStyle = "#2866db"; ctx.lineWidth = 1.5; ctx.fillStyle = "rgba(40,102,219,.08)";
+      ctx.fillRect(x + vx * scale, y + vy * scale, vw * scale, vh * scale);
+      ctx.strokeRect(x + vx * scale, y + vy * scale, vw * scale, vh * scale);
     }
 
     renderMedia(tr) {
