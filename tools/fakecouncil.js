@@ -252,10 +252,20 @@ async function act(agent, inbox) {
     const transcript = await request(`/transcript?session_id=${session.session_id}&limit=100`);
     const final = transcript.messages?.find((message) => message.kind === "final");
     const drawing = await request(`/sheet/${session.sheet_id}/ops?since=0`);
+    const fileList = await request(`/files?session_id=${session.session_id}`);
     const taskState = await request(`/session/${session.session_id}?since=0`);
     const summary = taskState.task ? `phase=${taskState.task.phase}, round=${taskState.task.round}` : "no active task";
     if (!final) { errors++; console.error(`No final answer appeared before the timeout (${summary}).`); }
     if (!drawing.ops?.length) { errors++; console.error(`No drawing operations appeared before the timeout (${summary}).`); }
+    const officeExpected = [
+      ["heat-pump-summary.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+      ["heat-pump-cop.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+    ];
+    for (const [name, mime] of officeExpected) {
+      if (!(fileList.files || []).some((file) => file.name === name && file.mime === mime && Number(file.bytes) > 0)) {
+        errors++; console.error(`No completed ${name} artifact appeared before the timeout (${summary}).`);
+      }
+    }
     if (errors) {
       console.error(`fakecouncil finished with ${errors} error(s): ${summary}; ${errorNotes.slice(0, 8).join(" | ")}`);
       process.exitCode = 1;
