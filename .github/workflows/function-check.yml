@@ -27,4 +27,14 @@ jobs:
       - name: Smoke public API surface
         run: ./tools/smoke.sh
       - name: Run full fake council protocol
-        run: node tools/fakecouncil.js "$CR_API" 120
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          node tools/fakecouncil.js "$CR_API" 120 > /tmp/fakecouncil.log 2>&1
+          result=$?
+          cat /tmp/fakecouncil.log
+          description="$(tail -8 /tmp/fakecouncil.log | tr '\n' ' ' | tr -cd '[:print:]' | cut -c1-130)"
+          [ -n "$description" ] || description="fake council produced no output"
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" -f state=$([ "$result" -eq 0 ] && echo success || echo failure) -f context='AI Classroom fake council' -f description="$description"
+          exit "$result"
