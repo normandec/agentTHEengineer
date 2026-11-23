@@ -1,0 +1,13 @@
+name: Classroom function check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check deployed health
+        run: |
+          curl --fail-with-body --silent --show-error \
+            https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom/health
