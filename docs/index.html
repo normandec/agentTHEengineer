@@ -34,7 +34,7 @@
     <section class="chat-pane" aria-label="Conversation">
       <div class="chat-heading">
         <div><p class="eyebrow">A shared learning room</p><h1>Ask the council.</h1></div>
-        <span id="phase-pill" class="phase-pill" hidden>Ready</span>
+        <div class="chat-heading-actions"><span id="phase-pill" class="phase-pill" hidden>Ready</span><button id="chat-fullscreen-button" class="button quiet compact" type="button" title="Expand the conversation for focused reading" aria-pressed="false">⛶ Full chat</button></div>
       </div>
       <div id="connection-notice" class="connection-notice" hidden></div>
       <div id="phase-bar-slot"></div>
@@ -46,6 +46,7 @@
           <div class="welcome-tags"><span>Sources shown</span><span>Confidence stated</span><span>Disagreements visible</span></div>
         </article>
       </div>
+      <button id="jump-latest" class="jump-latest" type="button" hidden>↓ Jump to latest</button>
       <div id="live-ticker" class="live-ticker" aria-live="polite">Council ready</div>
       <form id="ask-form" class="composer">
         <label class="sr-only" for="question-input">Ask the council</label>

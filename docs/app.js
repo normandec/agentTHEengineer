@@ -9,9 +9,9 @@
   // never committed or persisted; it is forwarded only to the configured Function.
   const ADMIN_KEY = pageParams.get("admin") || "";
   const storageKey = `ai-classroom-session:${API}`;
-  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null };
+  const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null, chatRenderKey: null, forceChatFollow: false, chatFocused: false };
   const els = {
-    chat: $("#chat-log"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count")
+    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count")
   };
 
   function api(path, options = {}) {
@@ -177,12 +177,64 @@
   }
   function speakCard(message) { const n=document.createElement("article"); n.className="message speak-card"; n.innerHTML=`<span>🔊</span><div><b>${escapeHtml(message.author || "Council")}</b><p>${escapeHtml(message.body)}</p></div><button type="button">Replay</button>`; n.querySelector("button").addEventListener("click",()=>voice.replay(message.body,message.meta)); return n; }
 
-  function renderChat() {
+  function nearChatBottom() {
+    return els.chat.scrollHeight - els.chat.scrollTop - els.chat.clientHeight < 72;
+  }
+  function updateJumpLatest() {
+    if (nearChatBottom()) els.jumpLatest.hidden = true;
+  }
+  function fingerprint(value) {
+    let hash = 2166136261;
+    for (const char of String(value ?? "")) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+    return (hash >>> 0).toString(36);
+  }
+  function messageSignature(message) {
+    return `${message.seq}:${message.kind}:${message.role}:${fingerprint(message.body)}:${fingerprint(JSON.stringify(message.meta || {}))}`;
+  }
+  function chatKey(messages) {
+    const messageKey = messages.map(messageSignature).join("|");
+    const taskKey = state.task ? `${state.task.id}:${state.task.phase}:${state.task.round}` : "idle";
+    return `${messageKey}::${taskKey}`;
+  }
+  function welcomeCard() {
+    const card = document.createElement("article"); card.className = "welcome-card";
+    card.innerHTML = `<span class="mini-mark">AI</span><h2>Ten perspectives. One transparent answer.</h2><p>Ask a question. The council researches, drafts, challenges, verifies and votes before it replies. While it works, both of you can use the shared board.</p><div class="welcome-tags"><span>Sources shown</span><span>Confidence stated</span><span>Disagreements visible</span></div>`;
+    return card;
+  }
+  function renderTurn(chunk, latest, signature) {
+    const turn = document.createElement("section"); turn.className = "chat-turn";
+    turn.dataset.questionSeq = String(chunk.question.seq); turn.dataset.signature = signature;
+    const question = document.createElement("article"); question.className = "message user";
+    question.innerHTML = `<div class="question-bubble">${escapeHtml(chunk.question.body)}</div>`; turn.append(question);
+    for (const final of chunk.finals) turn.append(answerCard(final, chunk.signals));
+    for (const signal of chunk.signals.filter((item) => item.kind === "media")) turn.append(mediaCard(signal));
+    for (const signal of chunk.signals.filter((item) => item.kind === "speak")) turn.append(speakCard(signal));
+    if (!chunk.finals.length && latest) {
+      const progress = document.createElement("article"); progress.className = "message progress-card";
+      const phase = state.task?.phase ? phaseName(state.task.phase) : "waiting for the council";
+      progress.innerHTML = `<b>The council is ${escapeHtml(phase)}.</b> It will publish sources, confidence and any unresolved disagreement with the answer.`;
+      turn.append(progress);
+      if (chunk.signals.length) turn.append(deliberationDetails(chunk.signals, true));
+    }
+    return turn;
+  }
+  function renderChat(options = {}) {
     const messages = [...state.messages.values()].sort((a, b) => a.seq - b.seq);
-    els.chat.innerHTML = "";
+    const key = chatKey(messages);
+    const forcedFollow = options.follow === true || state.forceChatFollow;
+    state.forceChatFollow = false;
+    if (!options.force && key === state.chatRenderKey) {
+      if (forcedFollow) { els.chat.scrollTop = els.chat.scrollHeight; els.jumpLatest.hidden = true; }
+      return false;
+    }
+    // Preserve existing turn nodes whenever their messages are unchanged. This
+    // avoids flicker and also preserves a reader's open deliberation details.
+    const follow = forcedFollow || (state.autoscroll && nearChatBottom());
     if (!messages.length) {
-      els.chat.innerHTML = `<article class="welcome-card"><span class="mini-mark">AI</span><h2>Ten perspectives. One transparent answer.</h2><p>Ask a question. The council researches, drafts, challenges, verifies and votes before it replies. While it works, both of you can use the shared board.</p><div class="welcome-tags"><span>Sources shown</span><span>Confidence stated</span><span>Disagreements visible</span></div></article>`;
-      return;
+      const existingWelcome = els.chat.children.length === 1 && els.chat.firstElementChild?.classList.contains("welcome-card");
+      if (!existingWelcome) els.chat.replaceChildren(welcomeCard());
+      state.chatRenderKey = key; els.jumpLatest.hidden = true;
+      return !existingWelcome;
     }
     const chunks = [];
     let current = null;
@@ -190,22 +242,24 @@
       if (message.kind === "question" && message.role === "user") { current = { question: message, signals: [], finals: [] }; chunks.push(current); }
       else if (current) { (message.kind === "final" && message.role === "council" ? current.finals : current.signals).push(message); }
     }
-    for (let index = 0; index < chunks.length; index++) {
-      const chunk = chunks[index];
-      const q = document.createElement("article"); q.className = "message user"; q.innerHTML = `<div class="question-bubble">${escapeHtml(chunk.question.body)}</div>`; els.chat.append(q);
-      for (const final of chunk.finals) els.chat.append(answerCard(final, chunk.signals));
-      for (const signal of chunk.signals.filter((x) => x.kind === "media")) els.chat.append(mediaCard(signal));
-      for (const signal of chunk.signals.filter((x) => x.kind === "speak")) els.chat.append(speakCard(signal));
+    const existingTurns = new Map([...els.chat.querySelectorAll(":scope > .chat-turn")].map((turn) => [turn.dataset.questionSeq, turn]));
+    const desired = chunks.map((chunk, index) => {
       const latest = index === chunks.length - 1;
-      if (!chunk.finals.length && latest) {
-        const progress = document.createElement("article"); progress.className = "message progress-card";
-        const ph = state.task?.phase ? phaseName(state.task.phase) : "waiting for the council";
-        progress.innerHTML = `<b>The council is ${escapeHtml(ph)}.</b> It will publish sources, confidence and any unresolved disagreement with the answer.`;
-        els.chat.append(progress);
-        if (chunk.signals.length) els.chat.append(deliberationDetails(chunk.signals, true));
-      }
+      const progress = !chunk.finals.length && latest ? `${state.task?.id || ""}:${state.task?.phase || ""}:${state.task?.round || ""}` : "";
+      const signature = `${messageSignature(chunk.question)}|${chunk.signals.map(messageSignature).join("|")}|${chunk.finals.map(messageSignature).join("|")}|${progress}`;
+      const old = existingTurns.get(String(chunk.question.seq));
+      return old?.dataset.signature === signature ? old : renderTurn(chunk, latest, signature);
+    });
+    let marker = els.chat.firstChild;
+    for (const turn of desired) {
+      if (turn === marker) marker = marker.nextSibling;
+      else els.chat.insertBefore(turn, marker);
     }
-    if (state.autoscroll) els.chat.scrollTop = els.chat.scrollHeight;
+    while (marker) { const next = marker.nextSibling; marker.remove(); marker = next; }
+    state.chatRenderKey = key;
+    if (follow) { els.chat.scrollTop = els.chat.scrollHeight; els.jumpLatest.hidden = true; }
+    else els.jumpLatest.hidden = false;
+    return true;
   }
 
   function renderSheets() {
@@ -219,7 +273,10 @@
     }
   }
 
-  const voice = new window.ClassroomVoice({ onState: (enabled) => { const b=$("#sound-button"); if (b) b.textContent = enabled ? "🔈 Sound on" : "🔇 Sound off"; } });
+  const voice = new window.ClassroomVoice({
+    onState: (enabled) => { const b=$("#sound-button"); if (b) b.textContent = enabled ? "🔈 Sound on" : "🔇 Sound off"; },
+    onUnavailable: (locale) => toast(`No installed ${locale} voice is available, so this response remains text only.`)
+  });
   const uploadProgress = (file, percent, label) => {
     const id = `upload-${file.name}-${file.lastModified}`; let row = document.getElementById(id);
     if (!row) { row = document.createElement("div"); row.id=id; row.className="upload-row"; els.uploadQueue.append(row); }
@@ -318,7 +375,7 @@
 
   async function createSession() {
     const data = await post("/session", { title: "AI Classroom session" });
-    state.sessionId = data.session_id; state.latestSeq = 0; state.messages.clear(); state.task = null; state.sheets = [];
+    state.sessionId = data.session_id; state.latestSeq = 0; state.messages.clear(); state.task = null; state.sheets = []; state.chatRenderKey = null; state.forceChatFollow = true;
     localStorage.setItem(storageKey, state.sessionId);
     await poll(true);
     if (data.sheet_id) await openSheet(data.sheet_id);
@@ -362,13 +419,22 @@
     els.ask.disabled = true; els.question.disabled = true;
     try {
       await post("/ask", { session_id: state.sessionId, text: taskText, sheet_id: state.activeSheet?.id || null });
-      els.question.value = ""; await poll();
-    } catch (error) { toast(`The question was not sent: ${error.message}`, 5000); }
+      state.forceChatFollow = true; els.question.value = ""; await poll();
+    } catch (error) { state.forceChatFollow = false; toast(`The question was not sent: ${error.message}`, 5000); }
     finally { els.ask.disabled = false; els.question.disabled = false; els.question.focus(); }
   }
 
   function openDrawer() { els.drawer.classList.add("open"); els.drawer.setAttribute("aria-hidden", "false"); els.scrim.hidden = false; $("#sheets-button").setAttribute("aria-expanded", "true"); }
   function closeDrawer() { els.drawer.classList.remove("open"); els.drawer.setAttribute("aria-hidden", "true"); els.scrim.hidden = true; $("#sheets-button").setAttribute("aria-expanded", "false"); }
+  function setChatFocus(focused) {
+    const wasFollowing = nearChatBottom();
+    state.chatFocused = Boolean(focused);
+    document.body.classList.toggle("chat-focus", state.chatFocused);
+    els.chatFocus.setAttribute("aria-pressed", String(state.chatFocused));
+    els.chatFocus.textContent = state.chatFocused ? "× Exit focus" : "⛶ Full chat";
+    els.chatFocus.title = state.chatFocused ? "Return to the shared room" : "Expand the conversation for focused reading";
+    requestAnimationFrame(() => { if (wasFollowing) { els.chat.scrollTop = els.chat.scrollHeight; els.jumpLatest.hidden = true; } });
+  }
 
   async function newSheet() {
     if (!state.sessionId) return;
@@ -440,6 +506,9 @@
   $("#sound-button").textContent = voice.enabled ? "🔈 Sound on" : "🔇 Sound off";
   $("#sound-button").addEventListener("click", () => voice.setEnabled(!voice.enabled));
   $("#voice-skip-button").addEventListener("click", () => { voice.skip(); toast("Voice skipped."); });
+  els.chatFocus.addEventListener("click", () => setChatFocus(!state.chatFocused));
+  els.jumpLatest.addEventListener("click", () => { els.chat.scrollTop = els.chat.scrollHeight; els.jumpLatest.hidden = true; });
+  els.chat.addEventListener("scroll", updateJumpLatest, { passive: true });
   $("#theme-button").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
   $("#mode-button").addEventListener("click", () => $("#mode-dialog").showModal());
   $("#close-mode").addEventListener("click", () => $("#mode-dialog").close());
@@ -472,7 +541,19 @@
   document.addEventListener("drop", (event) => { if (!isFileDrag(event)) return; event.preventDefault(); closeDropZone(); if (event.dataTransfer?.files?.length) uploadFiles(event.dataTransfer.files, event.shiftKey); });
   window.addEventListener("blur", closeDropZone); window.addEventListener("pagehide", closeDropZone);
   $("#cancel-drop").addEventListener("click", closeDropZone);
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !els.drop.hidden) { closeDropZone(); return; } if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();ask(els.question.value);} if(e.target.matches("textarea,input"))return; if(e.key.toLowerCase()==="n")newSheet(); if(e.key.toLowerCase()==="p")document.querySelector('[data-tool="pen"]').click(); if(e.key.toLowerCase()==="e")document.querySelector('[data-tool="eraser"]').click(); if(e.key.toLowerCase()==="h")document.querySelector('[data-tool="highlight"]').click(); if(e.key.toLowerCase()==="l")document.querySelector('[data-tool="laser"]').click(); if(e.key.toLowerCase()==="r")board.replay(); if(e.key===" ")document.querySelector('[data-tool="pan"]').click(); });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !els.drop.hidden) { closeDropZone(); return; }
+    if (event.key === "Escape" && state.chatFocused) { event.preventDefault(); setChatFocus(false); return; }
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); ask(els.question.value); }
+    if (event.target.matches("textarea,input")) return;
+    if (event.key.toLowerCase() === "n") newSheet();
+    if (event.key.toLowerCase() === "p") document.querySelector('[data-tool="pen"]').click();
+    if (event.key.toLowerCase() === "e") document.querySelector('[data-tool="eraser"]').click();
+    if (event.key.toLowerCase() === "h") document.querySelector('[data-tool="highlight"]').click();
+    if (event.key.toLowerCase() === "l") document.querySelector('[data-tool="laser"]').click();
+    if (event.key.toLowerCase() === "r") board.replay();
+    if (event.key === " ") document.querySelector('[data-tool="pan"]').click();
+  });
   function switchDrawer(tab) { state.drawerTab=tab; document.querySelectorAll("[data-drawer-tab]").forEach((b)=>b.classList.toggle("active",b.dataset.drawerTab===tab)); document.querySelectorAll(".drawer-panel").forEach((p)=>p.hidden=p.id!==`${tab}-list`); }
   els.form.addEventListener("submit", (event) => { event.preventDefault(); ask(els.question.value); });
   $("#new-session").addEventListener("click", () => { if (confirm("Start a new session? This keeps older sessions in the database, but switches this browser to a clean room.")) createSession(); });
