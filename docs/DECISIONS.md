@@ -5,7 +5,7 @@
 - AI CLASSROOM uses dedicated Supabase project `bbeeodsvaxykyhxrbnvz` in EU Central; it is isolated from unrelated projects.
 - GitHub Pages serves the static `docs/` directory. The browser has only a public Function URL; `classroom` is the one backend and holds service-role access.
 - The deployed Edge Function is a tiny connector entrypoint that fetches a pinned, self-contained `deploy.bundle.js` from this repository and registers its exported handler. This keeps the deployed bytes pinned to a reviewed commit when a direct authenticated Supabase CLI deployment is unavailable; every backend update must rebuild the bundle and move the pinned commit deliberately.
-- While this branch is being reviewed, Pages should serve `/docs` from `arena/20629a9d-agenttheengineer`; after merge it should serve `/docs` from `main`. The repository is currently still configured to the legacy `arena/99846906-agenttheengineer:/docs` source, so a repository administrator must change that Pages setting before the public Pages URL reflects this work.
+- While this branch is being reviewed, Pages should serve `/docs` from `arena/2e39d75c-agenttheengineer`; after merge it should serve `/docs` from `main`. Verify the GitHub Pages source when reviewing so the public Pages URL reflects the intended branch.
 
 ## Security and persistence
 
@@ -24,6 +24,7 @@
 
 - The scribe owns a concise `cr_memory` record (max 2,500 characters). Agents retrieve memory, FTS search results, and exact transcript slices rather than unbounded history.
 - Browser-side extraction is deliberately best-effort. Plain text is dependable; PDF/DOCX/XLSX/archive extraction uses optional CDN parser libraries. Audio/video transcription remains an agent capability.
+- Generic file publication is intentionally MIME-agnostic up to 100 MB so council workers can publish real Office documents and any other valid artifact. `tools/make-office.py` is a standard-library fallback that produces actual DOCX/XLSX packages rather than misleading renamed text files.
 - Knowledge chunks are Postgres full-text indexed with a future embedding JSON hook; pgvector is not required for this prototype.
 - `tools/mirror.js` uses a user-supplied Dropbox app token outside the platform. The Function cannot access Dropbox. `GET /export` supplies a portable ZIP for the same purpose.
 
@@ -38,6 +39,7 @@
 - A learning upload is marked learned only after browser extraction successfully writes readable text and the Function indexes it. Unsupported or failed extraction remains an ordinary shared file instead of misleading the learner with a false learning-library status.
 - Board draw completion is durable, not conversational: the Function will not advance a draw task or emit a saved illustration event unless every requested operation is inserted. The viewer reloads a board when it receives that event and visibly reports an absent saved illustration.
 - Sheet video operations retain their DOM media element across canvas renders. A `speak` message that carries `meta.lesson.{sheet_id,media_id}` starts the matching sheet animation alongside its narration; the learner can also start the latest lesson manually.
+- A saved lesson references an ordered, durable timeline of narration messages and board-operation checkpoints rather than duplicate audio or drawing bytes. This makes incremental drawing and erasing replayable from the same append-only sheet history.
 
 ## Known boundaries
 

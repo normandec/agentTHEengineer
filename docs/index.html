@@ -23,6 +23,7 @@
       <button id="voice-skip-button" class="icon-button" type="button" title="Skip current voice" aria-label="Skip current voice">⏭</button>
       <button id="new-session" class="button quiet" type="button" title="Start a new classroom session">New session</button>
       <button id="learn-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer" title="Open the learning library">✦ Learn</button>
+      <button id="lessons-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer" title="Open saved step-by-step lessons">▶ Lessons <b id="lessons-count">0</b></button>
       <button id="files-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">📁 Files <b id="files-count">0</b></button>
       <button id="sheets-button" class="button quiet" type="button" aria-expanded="false" aria-controls="sheets-drawer">Sheets</button>
       <button id="theme-button" class="icon-button" type="button" title="Use dark appearance" aria-label="Use dark appearance">◐</button>
@@ -52,7 +53,7 @@
       <form id="ask-form" class="composer">
         <label class="sr-only" for="question-input">Ask the council</label>
         <textarea id="question-input" rows="2" maxlength="4000" placeholder="Ask the council anything…  Try: Explain how a heat pump moves heat."></textarea>
-        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> fast · <kbd>/debate</kbd> full debate · <kbd>Ctrl↵</kbd> send</span><span class="composer-actions"><label class="files-button" title="Attach files to this conversation">+ Files<input id="files-input" type="file" multiple></label><label class="files-button learn-upload" title="Upload study material for the council to learn">✦ Learn<input id="knowledge-input" type="file" multiple></label><button id="mic-button" class="icon-button compact-icon" type="button" title="Dictate question">🎤</button><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></span></div>
+        <div class="composer-foot"><span class="composer-hint"><kbd>/quick</kbd> fast · <kbd>/debate</kbd> full debate · <kbd>Ctrl↵</kbd> send</span><span class="composer-actions"><label class="files-button" title="Attach any file type to this conversation, up to 100 MB">+ Files<input id="files-input" type="file" multiple></label><label class="files-button learn-upload" title="Upload study material for the council to learn">✦ Learn<input id="knowledge-input" type="file" multiple></label><button id="mic-button" class="icon-button compact-icon" type="button" title="Dictate question">🎤</button><button id="ask-button" class="button primary" type="submit">Ask <span aria-hidden="true">↗</span></button></span></div>
       </form>
     </section>
 
@@ -115,8 +116,9 @@
 
   <aside id="sheets-drawer" class="sheets-drawer" aria-label="Sheets drawer" aria-hidden="true">
     <div class="drawer-head"><div><p class="eyebrow">Board history</p><h2>Sheets</h2></div><button id="close-sheets" class="icon-button" type="button" aria-label="Close sheets">×</button></div>
-    <div class="drawer-tabs"><button data-drawer-tab="sheets" class="active">Sheets</button><button data-drawer-tab="files">Files</button><button data-drawer-tab="media">Media</button><button data-drawer-tab="knowledge">Knowledge</button></div>
+    <div class="drawer-tabs"><button data-drawer-tab="sheets" class="active">Sheets</button><button data-drawer-tab="lessons">Lessons</button><button data-drawer-tab="files">Files</button><button data-drawer-tab="media">Media</button><button data-drawer-tab="knowledge">Knowledge</button></div>
     <div id="sheets-list" class="sheets-list drawer-panel"></div>
+    <div id="lessons-list" class="files-list drawer-panel" hidden></div>
     <div id="files-list" class="files-list drawer-panel" hidden></div>
     <div id="media-list" class="files-list drawer-panel" hidden></div>
     <div id="knowledge-list" class="files-list drawer-panel" hidden>

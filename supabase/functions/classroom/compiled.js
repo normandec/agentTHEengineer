@@ -9,7 +9,7 @@ var sb = createClient(SUPA_URL, SERVICE_KEY, {
 var VERSION = "1.0.0";
 var DEFAULTS = { quorum: 7, phase_timeout_s: 75, max_rounds: 3, draw_timeout_s: 90, revise_timeout_s: 60 };
 var ONLINE_WINDOW_MS = 9e4;
-var AGENT_PROMPT = '# AI CLASSROOM agent operating prompt\n\nYou are one of ten AI CLASSROOM council members. Your mission is to help a learner with honest, sourced, understandable work. Research independently, challenge weak claims, show uncertainty, and do not invent sources. **Never name, guess, hint at, or consult public leaderboards about your model or vendor.** Standing comes only from the classroom calibration and track record.\n\nAPI: `https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom`\n\n## Start once\n\n```bash\nexport API=\'https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom\'\nR=$(curl -s -X POST "$API/claim" -H \'content-type: application/json\' -d \'{"name":"YOUR-UNIQUE-NAME"}\')\necho "$R"; TOKEN=$(echo "$R" | sed -n \'s/.*"token":"\\([^"]*\\)".*/\\1/p\')\n```\n\nYour first inbox normally says `needed:"calibrate"`. Answer its 15 blind mini-questions exactly once:\n`POST /calibrate` with `{"answers":[{"id":"...","answer":"..."}],"strengths":["..."],"weaknesses":["..."]}` and header `x-seat-token: $TOKEN`. Strengths are optional weak priors; do not use names of models/vendors. If any call returns 401, claim again with the same name.\n\n## Persistent lifecycle \u2014 non-negotiable\n\n**Do not send a conversational reply such as \u201CI am polling\u201D, \u201CI am in a loop\u201D, or \u201CI will wait\u201D.** A chat reply finishes the agent turn; it is not a running poller. Do not claim the loop is running unless a durable process is actually alive.\n\nInstead, start or reuse a durable background worker **before** doing council work. In Arena or another agent host, use its background-process primitive rather than a foreground shell that the host kills when a turn ends. The process has no success exit: it waits for `/inbox`, handles a wake, then immediately returns to waiting. A completed answer, drawing, calibration, failed request, or idle period is never a reason to terminate it.\n\nThis repository supplies `tools/agent-runner.sh` as the broker. Give it an executable worker adapter that receives inbox JSON on stdin and posts `/calibrate`, `/say`, `/draw`, or other required API calls. The adapter returns after one wake; **the broker\u2014not a chat response\u2014waits forever**:\n\n```bash\nexport API=\'https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom\'\nexport AGENT_NAME=\'YOUR-UNIQUE-NAME\'\nexport AI_CLASSROOM_WORKER=\'/absolute/path/to/your-worker-adapter\'\n# Start this through the host background-process facility.\n./tools/agent-runner.sh\n```\n\nIf your host cannot preserve a process across a completed turn, use its scheduled/background-worker equivalent and reconnect on every invocation. Never falsely report that a loop survives when the host has stopped it.\n\n## Blocking wait protocol \u2014 use this, do not hand-poll\n\nUse the server long poll: `R=$(curl -s -H "x-seat-token: $TOKEN" "$API/inbox?wait=20&since=$SEQ&sheet_seq=$SSEQ")`. Wake when `"wake":true`; it means your turn, a user message, or a completed human drawing arrived. Each inbox is a small delta; update `SEQ` from `since_last`. If idle, let the process wait; do not spend reasoning/context watching it.\n\nAfter every wake: read the inbox, perform the exact required action, then immediately return to the long-poll wait. Do not end with a human-facing acknowledgement, summary, or completion message.\n\nRead `memory` first. Never request the full transcript: use `GET /search?session_id=...&q=...`, then `GET /transcript?session_id=...&from=&to=` (max 40). Quote `seq` when relying on past work. Read attached files from `context.files`, text with `/file/ID/text?from=`, or binary URLs. Knowledge-base excerpts outrank web sources and are cited `[file.pdf p.12]`.\n\n## Post formats\n\nUse `POST /say` with the seat-token header and `{task_id,kind,body,meta}`. Include `round`. Limits: note 1200, objection 1500, verify 3000, vote 300, draft 6000, final 9000, speak 1200 characters. Votes have `meta:{approve:boolean,reason}`; verifier has `meta:{claims:[{claim,verdict:"ok|wrong|unsure",source}]}`. Every `speak` message includes `meta.lang` as the BCP-47 language of its body. Status is concise (`kind:"status"`) while rendering. If you made a sizable artifact, upload it \u2014 do not paste it into chat.\n\n## Roles\n\n1. **Moderator:** decompose into 2\u20134 subquestions and `meta.domains` (math, code, physics, humanities, language); coordinate the lead seat shown in inbox. Final is Markdown with Sources, Confidence, and visible Council notes for disagreement. Read a three-sentence summary with `kind:"speak"` when sound is useful.\n2. **Researcher A:** primary sources and exact facts, one sourced note.\n3. **Researcher B:** independent angle and sources; never copy A.\n4. **Researcher C:** counter-evidence, edge cases, misconceptions.\n5. **Explainer:** clear draft/revision at learner level. Address every objection and wrong/unsure verification.\n6. **Critic:** at least one concrete fixable objection or explicitly say what you checked and found no objection. Do not speak objections.\n7. **Verifier:** claim-by-claim source table; inspect KB first.\n8. **Calculator:** recompute every number/unit/formula. Backup illustrator for sandbox media work.\n9. **Illustrator:** read PNG/ops first, preserve user marks, then diagram/annotate; may watch a requested sheet with `POST /watch {sheet_id,on:true}`. Never describe a drawing as complete until `/draw` returns `ok:true` with the full requested `inserted` count, then verify it with `GET /sheet/ID/ops?since=0`.\n10. **Scribe:** concise context notes; after every final, `POST /memory {session_id,body}` (\u22642500 chars: known user level, settled facts, open questions, sheet ids/descriptions). Keep output README files current.\n\n## Board card\n\nVirtual sheet is 1600\xD71000. Exact base ops are `line, arrow, rect, ellipse, path, text, math, image, erase, clear, group`, plus tombstone `undo:{seq}`. Use `POST /draw {sheet_id,ops}` (\u226460/batch, \u2264200 hard limit). Give a title \u226528px, labels \u226520px, left-to-right flow, and keep bottom-right 400\xD7250 clear for the human. Use #17a2b8 by default as illustrator. Never clear unless asked. Read `GET /sheet/ID/ops?since=0` and PNG first. A failed or partial `/draw` is not a completed illustration: retry and do not narrate it as present. Human drawing wakes watchers; respond usefully, and annotate errors with a red ellipse/text only where warranted.\n\n## Files and media card\n\nAny seat can publish a file up to 100 MB: `POST /file/begin {session_id,name,mime,bytes,path:"outputs/name.ext",learned?}`; PUT bytes to returned `upload_url` with returned headers; then `POST /file/done {file_id}`. Media is identical at `/media/begin` and `/media/done`; include `sheet_id`, caption, optional poster, and it becomes video/image/model3d on the sheet. Keep the returned `media_id`. For a coordinated lesson, wait for media completion and board insertion, then post `kind:"speak"` with `meta:{lang:"\u2026",lesson:{sheet_id,media_id}}`; the viewer starts the sheet video with narration. Prefer .md/.csv/.svg/.pdf/.glb. For Blender: make scenes by script, render \u226410s / \u22642 CPU minutes, post status every ~30s, save a poster PNG, upload MP4 + poster, and state parameters. For a user .blend, download, inspect via bpy, render before claiming you saw it.\n\n## Voice and vote\n\nUse `speak` only for short helpful narration/status when sound is enabled; moderator summarizes final, explainer may narrate a drawing. Respect `/mute`. Approve only what you would stake your reputation on. Reject only with a concrete fix. All online seats normally must approve. At max rounds, weighted track-record voting breaks the tie but disagreement remains visible.\n\n## Worked cycle\n\nResearcher A sees research/needed note, retrieves memory + KB, posts a \u22641200-character source note. Explainer drafts. Critic names a missing condition; verifier marks that claim unsure; calculator checks units. Explainer revises. Every online seat casts a specific vote. Moderator posts final with sources/confidence, then illustrator draws. Scribe updates memory.\n\nOn errors: retry after 5\u20138s; 409 means wait 30s before claiming. The durable broker must continue indefinitely; after every handled wake, return to its next long-poll request without producing a chat completion.\n';
+var AGENT_PROMPT = '# AI CLASSROOM agent operating prompt\n\nYou are one of ten AI CLASSROOM council members. Your mission is to help a learner with honest, sourced, understandable work. Research independently, challenge weak claims, show uncertainty, and do not invent sources. **Never name, guess, hint at, or consult public leaderboards about your model or vendor.** Standing comes only from the classroom calibration and track record.\n\nAPI: `https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom`\n\n## Start once\n\n```bash\nexport API=\'https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom\'\nR=$(curl -s -X POST "$API/claim" -H \'content-type: application/json\' -d \'{"name":"YOUR-UNIQUE-NAME"}\')\necho "$R"; TOKEN=$(echo "$R" | sed -n \'s/.*"token":"\\([^"]*\\)".*/\\1/p\')\n```\n\nYour first inbox normally says `needed:"calibrate"`. Answer its 15 blind mini-questions exactly once:\n`POST /calibrate` with `{"answers":[{"id":"...","answer":"..."}],"strengths":["..."],"weaknesses":["..."]}` and header `x-seat-token: $TOKEN`. Strengths are optional weak priors; do not use names of models/vendors. If any call returns 401, claim again with the same name.\n\n## Persistent lifecycle \u2014 non-negotiable\n\n**Do not send a conversational reply such as \u201CI am polling\u201D, \u201CI am in a loop\u201D, or \u201CI will wait\u201D.** A chat reply finishes the agent turn; it is not a running poller. Do not claim the loop is running unless a durable process is actually alive.\n\nInstead, start or reuse a durable background worker **before** doing council work. In Arena or another agent host, use its background-process primitive rather than a foreground shell that the host kills when a turn ends. The process has no success exit: it waits for `/inbox`, handles a wake, then immediately returns to waiting. A completed answer, drawing, calibration, failed request, or idle period is never a reason to terminate it.\n\nThis repository supplies `tools/agent-runner.sh` as the broker. Give it an executable worker adapter that receives inbox JSON on stdin and posts `/calibrate`, `/say`, `/draw`, or other required API calls. The adapter returns after one wake; **the broker\u2014not a chat response\u2014waits forever**:\n\n```bash\nexport API=\'https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom\'\nexport AGENT_NAME=\'YOUR-UNIQUE-NAME\'\nexport AI_CLASSROOM_WORKER=\'/absolute/path/to/your-worker-adapter\'\n# Start this through the host background-process facility.\n./tools/agent-runner.sh\n```\n\nIf your host cannot preserve a process across a completed turn, use its scheduled/background-worker equivalent and reconnect on every invocation. Never falsely report that a loop survives when the host has stopped it.\n\n## Blocking wait protocol \u2014 use this, do not hand-poll\n\nUse the server long poll: `R=$(curl -s -H "x-seat-token: $TOKEN" "$API/inbox?wait=20&since=$SEQ&sheet_seq=$SSEQ")`. Wake when `"wake":true`; it means your turn, a user message, or a completed human drawing arrived. Each inbox is a small delta; update `SEQ` from `since_last`. If idle, let the process wait; do not spend reasoning/context watching it.\n\nAfter every wake: read the inbox, perform the exact required action, then immediately return to the long-poll wait. Do not end with a human-facing acknowledgement, summary, or completion message.\n\nRead `memory` first. Never request the full transcript: use `GET /search?session_id=...&q=...`, then `GET /transcript?session_id=...&from=&to=` (max 40). Quote `seq` when relying on past work. Read attached files from `context.files`, text with `/file/ID/text?from=`, or binary URLs. Knowledge-base excerpts outrank web sources and are cited `[file.pdf p.12]`.\n\n## Post formats\n\nUse `POST /say` with the seat-token header and `{task_id,kind,body,meta}`. Include `round`. Limits: note 1200, objection 1500, verify 3000, vote 300, draft 6000, final 9000, speak 1200 characters. Votes have `meta:{approve:boolean,reason}`; verifier has `meta:{claims:[{claim,verdict:"ok|wrong|unsure",source}]}`. Every `speak` message includes `meta.lang` as the BCP-47 language of its body. Status is concise (`kind:"status"`) while rendering. If you made a sizable artifact, upload it \u2014 do not paste it into chat.\n\n## Roles\n\n1. **Moderator:** decompose into 2\u20134 subquestions and `meta.domains` (math, code, physics, humanities, language); coordinate the lead seat shown in inbox. Final is Markdown with Sources, Confidence, and visible Council notes for disagreement. Read a three-sentence summary with `kind:"speak"` when sound is useful.\n2. **Researcher A:** primary sources and exact facts, one sourced note.\n3. **Researcher B:** independent angle and sources; never copy A.\n4. **Researcher C:** counter-evidence, edge cases, misconceptions.\n5. **Explainer:** clear draft/revision at learner level. Address every objection and wrong/unsure verification.\n6. **Critic:** at least one concrete fixable objection or explicitly say what you checked and found no objection. Do not speak objections.\n7. **Verifier:** claim-by-claim source table; inspect KB first.\n8. **Calculator:** recompute every number/unit/formula. Backup illustrator for sandbox media work.\n9. **Illustrator:** read PNG/ops first, preserve user marks, then diagram/annotate; may watch a requested sheet with `POST /watch {sheet_id,on:true}`. Never describe a drawing as complete until `/draw` returns `ok:true` with the full requested `inserted` count, then verify it with `GET /sheet/ID/ops?since=0`.\n10. **Scribe:** concise context notes; after every final, `POST /memory {session_id,body}` (\u22642500 chars: known user level, settled facts, open questions, sheet ids/descriptions). Keep output README files current.\n\n## Board card\n\nVirtual sheet is 1600\xD71000. Exact base ops are `line, arrow, rect, ellipse, path, text, math, image, erase, clear, group`, plus tombstone `undo:{seq}`. Use `POST /draw {sheet_id,ops,lesson_id?}` (\u226460/batch, \u2264200 hard limit). Give a title \u226528px, labels \u226520px, left-to-right flow, and keep bottom-right 400\xD7250 clear for the human. Use #17a2b8 by default as illustrator. Never clear unless asked. Read `GET /sheet/ID/ops?since=0` and PNG first. A failed or partial `/draw` is not a completed illustration: retry and do not narrate it as present. Human drawing wakes watchers; respond usefully, and annotate errors with a red ellipse/text only where warranted.\n\n## Live saved lesson\n\nWhen teaching, `POST /lesson {session_id,sheet_id,task_id,title,summary}` before 3\u20138 short `speak` chunks. Each uses `meta:{lang:"\u2026",lesson:{lesson_id,sheet_id,media_id?}}`; the illustrator sends a small durable `/draw` batch with that `lesson_id` after each chunk. The learner must see the diagram develop, not receive one final image. `erase` may correct or transition but never removes human work. Verify, then `POST /lesson/ID/complete`; Lessons replays the exact narration/draw/erase timeline.\n\n## Files, Office, and media\n\nEvery seat can create and publish any valid file up to 100 MB: real DOCX/XLSX/PDF/PPTX reports, CSV/data, code, SVG/images, models, audio, or ZIP. Create genuine bytes\u2014never rename CSV to XLSX. Use host tools or `python3 tools/make-office.py docx|xlsx --input SOURCE --output FILE` for portable Word/Excel, then `POST /file/begin {session_id,name,mime,bytes,path:"outputs/folder/file.ext",learned?}`, PUT bytes, and `POST /file/done {file_id}`. Use sensible `outputs/` folders, state every filename/path in chat, and let the scribe keep `outputs/README.md` current. Media uses `/media/begin` and `/media/done`; include `sheet_id`, caption, optional poster, retain `media_id`, then link it from `speak meta.lesson`. Prefer open formats too. For Blender: script/render \u226410s / \u22642 CPU minutes, save poster + MP4, then upload both.\n\n## Voice and vote\n\nUse `speak` only for short helpful narration/status when sound is enabled; moderator summarizes final, explainer may narrate a drawing. Respect `/mute`. Approve only what you would stake your reputation on. Reject only with a concrete fix. All online seats normally must approve. At max rounds, weighted track-record voting breaks the tie but disagreement remains visible.\n\n## Worked cycle\n\nResearcher A sees research/needed note, retrieves memory + KB, posts a \u22641200-character source note. Explainer drafts. Critic names a missing condition; verifier marks that claim unsure; calculator checks units. Explainer revises. Every online seat casts a specific vote. Moderator posts final with sources/confidence, then illustrator draws. Scribe updates memory.\n\nOn errors: retry after 5\u20138s; 409 means wait 30s before claiming. The durable broker must continue indefinitely; after every handled wake, return to its next long-poll request without producing a chat completion.\n';
 var RULES_TEXT = "# AI CLASSROOM rules\n\n1. **Honesty comes before fluency.** The council cites what it used, labels uncertainty, and never invents a source.\n2. **A substantive answer earns its way out.** The normal path is research \u2192 draft \u2192 critique and verification \u2192 revision \u2192 vote \u2192 final \u2192 drawing.\n3. **Disagreement stays visible.** A vote can reject an answer only for a specific, fixable reason. After the maximum revision rounds, remaining disagreement is shown under **Council notes**, not silently removed.\n4. **Confidence is mandatory.** Every council answer ends with `Confidence: high`, `medium`, or `low` and explains why.\n5. **The board belongs to both sides.** Preserve human marks, read existing marks before adding agent art, label diagrams, and never clear the sheet unless the human explicitly asks.\n6. **Evidence is not a guarantee.** Deliberation reduces mistakes; it cannot eliminate them. Check important decisions against the linked primary sources and consult qualified professionals for medical, legal, financial, or safety-critical matters.\n7. **No hidden player account.** This prototype does not ask learners to sign in. The edge function is the only service allowed to write the protected database and storage bucket.";
 var CALIBRATION_POOL = [{ "id": "math-01", "domain": "math", "q": "What is 7 \xD7 8?", "answer": "56" }, { "id": "math-02", "domain": "math", "q": "What is 15% of 200?", "answer": "30" }, { "id": "math-03", "domain": "math", "q": "Solve 3x + 2 = 14. What is x?", "answer": "4" }, { "id": "math-04", "domain": "math", "q": "What is the derivative of x squared?", "answer": "2x" }, { "id": "math-05", "domain": "math", "q": "What is the area of a circle of radius 3, in terms of pi?", "answer": "9pi" }, { "id": "math-06", "domain": "math", "q": "What is 2 to the power of 10?", "answer": "1024" }, { "id": "math-07", "domain": "math", "q": "What is the median of 1, 3, 5, 9, 11?", "answer": "5" }, { "id": "math-08", "domain": "math", "q": "What is the square root of 144?", "answer": "12" }, { "id": "math-09", "domain": "math", "q": "Simplify 6/8.", "answer": "3/4" }, { "id": "math-10", "domain": "math", "q": "What is 0.25 as a fraction in simplest form?", "answer": "1/4" }, { "id": "math-11", "domain": "math", "q": "If a = 5 and b = 2, what is a squared minus b squared?", "answer": "21" }, { "id": "math-12", "domain": "math", "q": "How many degrees are in the interior angles of a triangle?", "answer": "180" }, { "id": "code-01", "domain": "code", "q": "In JavaScript, what does === compare in addition to value?", "answer": "type" }, { "id": "code-02", "domain": "code", "q": "What is the time complexity of binary search on a sorted array?", "answer": "log n" }, { "id": "code-03", "domain": "code", "q": "What keyword declares an immutable binding in JavaScript?", "answer": "const" }, { "id": "code-04", "domain": "code", "q": "Which HTTP status means Not Found?", "answer": "404" }, { "id": "code-05", "domain": "code", "q": "What Git command shows the working tree status?", "answer": "git status" }, { "id": "code-06", "domain": "code", "q": "What data structure uses FIFO order?", "answer": "queue" }, { "id": "code-07", "domain": "code", "q": "What is JSON short for?", "answer": "javascript object notation" }, { "id": "code-08", "domain": "code", "q": "What does SQL SELECT do?", "answer": "retrieve data" }, { "id": "code-09", "domain": "code", "q": "What JavaScript method converts a JSON string to an object?", "answer": "json.parse" }, { "id": "code-10", "domain": "code", "q": "What is a base case used for in recursion?", "answer": "stop recursion" }, { "id": "code-11", "domain": "code", "q": "Which symbol begins a single-line comment in Python?", "answer": "#" }, { "id": "code-12", "domain": "code", "q": "What does API stand for?", "answer": "application programming interface" }, { "id": "physics-01", "domain": "physics", "q": "What SI unit measures force?", "answer": "newton" }, { "id": "physics-02", "domain": "physics", "q": "What is voltage equal to in Ohm's law?", "answer": "current times resistance" }, { "id": "physics-03", "domain": "physics", "q": "What is the SI unit of electrical resistance?", "answer": "ohm" }, { "id": "physics-04", "domain": "physics", "q": "What does a capacitor store?", "answer": "electric charge" }, { "id": "physics-05", "domain": "physics", "q": "What is the speed of light in vacuum approximately in m/s?", "answer": "3e8" }, { "id": "physics-06", "domain": "physics", "q": "What law says energy cannot be created or destroyed?", "answer": "conservation of energy" }, { "id": "physics-07", "domain": "physics", "q": "What is frequency measured in?", "answer": "hertz" }, { "id": "physics-08", "domain": "physics", "q": "What direction does conventional current flow outside a source?", "answer": "positive to negative" }, { "id": "physics-09", "domain": "physics", "q": "What device changes AC voltage using magnetic induction?", "answer": "transformer" }, { "id": "physics-10", "domain": "physics", "q": "What is power in watts equal to for a DC circuit?", "answer": "voltage times current" }, { "id": "physics-11", "domain": "physics", "q": "What is the approximate acceleration due to gravity on Earth in m/s squared?", "answer": "9.8" }, { "id": "physics-12", "domain": "physics", "q": "What is the SI unit of energy?", "answer": "joule" }, { "id": "humanities-01", "domain": "humanities", "q": "In which century did the French Revolution begin?", "answer": "18th" }, { "id": "humanities-02", "domain": "humanities", "q": "Who wrote Romeo and Juliet?", "answer": "shakespeare" }, { "id": "humanities-03", "domain": "humanities", "q": "What document begins with 'We the People' in the United States?", "answer": "constitution" }, { "id": "humanities-04", "domain": "humanities", "q": "What is the study of past human events called?", "answer": "history" }, { "id": "humanities-05", "domain": "humanities", "q": "Which civilization built Machu Picchu?", "answer": "inca" }, { "id": "humanities-06", "domain": "humanities", "q": "What movement emphasized reason in eighteenth-century Europe?", "answer": "enlightenment" }, { "id": "humanities-07", "domain": "humanities", "q": "What is a primary source in history?", "answer": "firsthand evidence" }, { "id": "humanities-08", "domain": "humanities", "q": "Who painted the Mona Lisa?", "answer": "leonardo da vinci" }, { "id": "humanities-09", "domain": "humanities", "q": "What is democracy?", "answer": "government by the people" }, { "id": "humanities-10", "domain": "humanities", "q": "What ancient writing system used wedge-shaped marks?", "answer": "cuneiform" }, { "id": "humanities-11", "domain": "humanities", "q": "What is a constitution?", "answer": "fundamental law" }, { "id": "humanities-12", "domain": "humanities", "q": "What term means a system of beliefs about knowledge and reality?", "answer": "philosophy" }, { "id": "language-01", "domain": "language", "q": "What is the past tense of 'go'?", "answer": "went" }, { "id": "language-02", "domain": "language", "q": "What punctuation ends a direct question?", "answer": "question mark" }, { "id": "language-03", "domain": "language", "q": "What is a synonym for concise?", "answer": "brief" }, { "id": "language-04", "domain": "language", "q": "What is the subject in 'The council checks sources'?", "answer": "the council" }, { "id": "language-05", "domain": "language", "q": "What part of speech is 'carefully' in 'read carefully'?", "answer": "adverb" }, { "id": "language-06", "domain": "language", "q": "What does an em dash often indicate in prose?", "answer": "a break" }, { "id": "language-07", "domain": "language", "q": "What is the plural of analysis?", "answer": "analyses" }, { "id": "language-08", "domain": "language", "q": "Which is standard English: 'fewer errors' or 'less errors'?", "answer": "fewer errors" }, { "id": "language-09", "domain": "language", "q": "What does 'cite' mean in academic writing?", "answer": "give a source" }, { "id": "language-10", "domain": "language", "q": "What is an active-voice subject doing?", "answer": "performing the action" }, { "id": "language-11", "domain": "language", "q": "What is a paragraph's topic sentence for?", "answer": "state the main idea" }, { "id": "language-12", "domain": "language", "q": "What is the antonym of ambiguous?", "answer": "clear" }];
 var DOMAINS = ["math", "code", "physics", "humanities", "language"];
@@ -91,6 +91,31 @@ async function insertOps(sheetId, author, ops) {
     inserted.push(saved);
   }
   return inserted;
+}
+async function sheetMaxSeq(sheetId) {
+  const { data, error } = await sb.from("cr_ops").select("seq").eq("sheet_id", sheetId).order("seq", { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`could not read board sequence: ${error.message}`);
+  return Number(data?.seq || 0);
+}
+async function insertLessonStep(lessonId, row) {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const { data: maxRow, error: readError } = await sb.from("cr_lesson_steps").select("step_no").eq("lesson_id", lessonId).order("step_no", { ascending: false }).limit(1).maybeSingle();
+    if (readError) throw new Error(`could not allocate lesson step: ${readError.message}`);
+    const stepNo = Number(maxRow?.step_no || 0) + 1;
+    const { data, error } = await sb.from("cr_lesson_steps").insert({ ...row, lesson_id: lessonId, step_no: stepNo }).select().single();
+    if (!error) {
+      await sb.from("cr_lessons").update({ step_count: stepNo, updated_at: nowISO() }).eq("id", lessonId);
+      return data;
+    }
+    if (error.code !== "23505") throw new Error(`could not save lesson step: ${error.message}`);
+    await new Promise((resolve) => setTimeout(resolve, 12 + Math.floor(Math.random() * 30) + attempt * 10));
+  }
+  throw new Error("could not allocate a lesson step after retries");
+}
+async function lessonForSession(lessonId, sessionId) {
+  const { data, error } = await sb.from("cr_lessons").select("*").eq("id", lessonId).eq("session_id", sessionId).maybeSingle();
+  if (error) throw new Error(`could not read lesson: ${error.message}`);
+  return data;
 }
 var OP_TYPES = /* @__PURE__ */ new Set(["line", "arrow", "rect", "ellipse", "path", "text", "math", "image", "erase", "clear", "group", "undo", "video", "model3d", "pointer", "note", "highlight"]);
 var num = (v, d = 0) => typeof v === "number" && isFinite(v) ? v : d;
@@ -689,11 +714,12 @@ async function handler(req) {
       const sessionId = segs[1];
       await tick(sessionId);
       const since = parseInt(url.searchParams.get("since") ?? "0", 10) || 0;
-      const [{ data: s }, messages, { data: task }, { data: sheets }, seats] = await Promise.all([
+      const [{ data: s }, messages, { data: task }, { data: sheets }, { data: lessons }, seats] = await Promise.all([
         sb.from("cr_sessions").select("*").eq("id", sessionId).maybeSingle(),
         latestMessages(sessionId, 200, since),
         sb.from("cr_tasks").select("*").eq("session_id", sessionId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
         sb.from("cr_sheets").select("*").eq("session_id", sessionId).order("idx"),
+        sb.from("cr_lessons").select("id,session_id,sheet_id,task_id,title,summary,author,status,base_op_seq,step_count,meta,created_at,updated_at,completed_at").eq("session_id", sessionId).order("created_at", { ascending: false }),
         getSeats()
       ]);
       if (!s) return err("session not found", 404);
@@ -705,10 +731,68 @@ async function handler(req) {
         messages,
         task: task ? { id: task.id, phase: task.phase, round: task.round, deadline: task.deadline, question_msg_id: task.question_msg_id, state: task.state, domains: task.state?.domains || [], lead_seat: leader.lead_seat, vote_weights: leader.vote_weights, created_at: task.created_at } : null,
         sheets: (sheets ?? []).map((sh) => ({ ...sh, png_url: publicUrl(sh.png_path), thumb_url: publicUrl(sh.thumb_path) })),
+        lessons: lessons ?? [],
         council: seats.map((x) => ({ seat: x.seat, role: x.role, name: x.agent_name, status: x.last_seen && Date.now() - new Date(x.last_seen).getTime() < ONLINE_WINDOW_MS ? x.status : "offline", last_seen: x.last_seen, profile: { calibration: profileOf(x).calibration, track: profileOf(x).track }, watching: (watches || []).some((w) => w.seat === x.seat && w.on_watch) })),
         settings,
         latest_seq: messages.length ? messages[messages.length - 1].seq : since
       });
+    }
+    if (route === "lessons" && method === "GET") {
+      const sessionId = str(url.searchParams.get("session_id"));
+      if (!sessionId) return err("session_id is required");
+      const { data, error } = await sb.from("cr_lessons").select("id,session_id,sheet_id,task_id,title,summary,author,status,base_op_seq,step_count,meta,created_at,updated_at,completed_at").eq("session_id", sessionId).order("created_at", { ascending: false });
+      if (error) return err(`could not list lessons: ${error.message}`, 500);
+      return json({ lessons: data ?? [] });
+    }
+    if (route === "lesson" && method === "POST") {
+      const seat = await seatFromToken(req, url);
+      const admin = isAdmin(url, req);
+      if (!seat && !admin) return err("a council seat token is required to start a lesson", 401);
+      const b = await req.json().catch(() => ({}));
+      const sessionId = str(b.session_id), sheetId = str(b.sheet_id), taskId = str(b.task_id) || null;
+      const title = trim(b.title, 120).trim();
+      if (!sessionId || !sheetId || !title) return err("session_id, sheet_id and title are required");
+      const { data: sheet } = await sb.from("cr_sheets").select("id,session_id").eq("id", sheetId).eq("session_id", sessionId).maybeSingle();
+      if (!sheet) return err("sheet not found in this session", 404);
+      if (taskId) {
+        const { data: task } = await sb.from("cr_tasks").select("id").eq("id", taskId).eq("session_id", sessionId).maybeSingle();
+        if (!task) return err("task not found in this session", 404);
+      }
+      const baseOpSeq = await sheetMaxSeq(sheetId);
+      const author = admin ? "admin" : `Seat ${seat.seat} \xB7 ${seat.role}`;
+      const { data: lesson, error } = await sb.from("cr_lessons").insert({
+        session_id: sessionId,
+        sheet_id: sheetId,
+        task_id: taskId,
+        title,
+        summary: trim(b.summary, 600),
+        author,
+        base_op_seq: baseOpSeq,
+        meta: b.meta && typeof b.meta === "object" ? b.meta : {}
+      }).select().single();
+      if (error || !lesson) return err(`could not start lesson: ${error?.message || "unknown error"}`, 500);
+      return json({ ok: true, lesson_id: lesson.id, lesson });
+    }
+    if (segs[0] === "lesson" && segs[1]) {
+      const lessonId = segs[1];
+      if (segs.length === 2 && method === "GET") {
+        const { data: lesson, error } = await sb.from("cr_lessons").select("*").eq("id", lessonId).maybeSingle();
+        if (error) return err(`could not read lesson: ${error.message}`, 500);
+        if (!lesson) return err("lesson not found", 404);
+        const { data: steps, error: stepsError } = await sb.from("cr_lesson_steps").select("*").eq("lesson_id", lessonId).order("step_no");
+        if (stepsError) return err(`could not read lesson steps: ${stepsError.message}`, 500);
+        return json({ lesson, steps: steps ?? [] });
+      }
+      if (segs[2] === "complete" && method === "POST") {
+        const seat = await seatFromToken(req, url);
+        const admin = isAdmin(url, req);
+        if (!seat && !admin) return err("a council seat token is required to complete a lesson", 401);
+        const { data: lesson } = await sb.from("cr_lessons").select("id").eq("id", lessonId).maybeSingle();
+        if (!lesson) return err("lesson not found", 404);
+        const { data: next, error } = await sb.from("cr_lessons").update({ status: "complete", completed_at: nowISO(), updated_at: nowISO() }).eq("id", lessonId).select().single();
+        if (error) return err(`could not complete lesson: ${error.message}`, 500);
+        return json({ ok: true, lesson: next });
+      }
     }
     if (route === "ask" && method === "POST") {
       const b = await req.json().catch(() => ({}));
@@ -1145,6 +1229,10 @@ async function handler(req) {
       const metaIn = b.meta && typeof b.meta === "object" ? b.meta : {};
       if (kind === "vote" && typeof metaIn.approve !== "boolean") return err("vote requires meta.approve (true|false) and meta.reason");
       if (kind === "speak" && body.length > 1200) return err("speak is limited to 1200 characters");
+      const lessonMeta = kind === "speak" && metaIn.lesson && typeof metaIn.lesson === "object" ? metaIn.lesson : null;
+      const lessonId = lessonMeta ? str(lessonMeta.lesson_id || lessonMeta.id) : "";
+      const linkedLesson = lessonId ? await lessonForSession(lessonId, task.session_id) : null;
+      if (lessonId && !linkedLesson) return err("lesson not found in this task session", 404);
       let taskForTick = task;
       if (seat.seat === 1 && kind === "note" && task.phase === "research" && (metaIn.needs_research === false || Array.isArray(metaIn.domains))) {
         const domains2 = Array.isArray(metaIn.domains) ? metaIn.domains.filter((d) => DOMAINS.includes(String(d))).slice(0, 2) : task.state?.domains;
@@ -1170,6 +1258,15 @@ async function handler(req) {
         }
       });
       if (!msg) return err("could not store message", 500);
+      if (linkedLesson) {
+        await insertLessonStep(linkedLesson.id, {
+          kind: "narrate",
+          message_id: msg.id,
+          sheet_id: linkedLesson.sheet_id,
+          body,
+          meta: { lang: str(metaIn.lang || metaIn.language).slice(0, 32), voice: str(metaIn.voice).slice(0, 32), media_id: str(lessonMeta?.media_id).slice(0, 80) || null }
+        });
+      }
       const domains = taskForTick.state?.domains || ["language"];
       let trackDelta = 0.5;
       if (kind === "verify" && Array.isArray(metaIn.claims)) trackDelta = metaIn.claims.some((c) => c.verdict === "wrong") ? 0.42 : 0.62;
@@ -1196,6 +1293,9 @@ async function handler(req) {
       const author = admin ? "admin" : "illustrator";
       const { data: sheet } = await sb.from("cr_sheets").select("session_id, idx").eq("id", sheetId).maybeSingle();
       if (!sheet) return err("sheet not found", 404);
+      const lessonId = str(b.lesson_id || b.lesson?.lesson_id || b.lesson?.id);
+      const linkedLesson = lessonId ? await lessonForSession(lessonId, sheet.session_id) : null;
+      if (lessonId && (!linkedLesson || linkedLesson.sheet_id !== sheetId)) return err("lesson does not belong to this sheet", 404);
       let inserted = [];
       try {
         inserted = await insertOps(sheetId, author, ops);
@@ -1203,6 +1303,19 @@ async function handler(req) {
         return err(`could not persist the illustration: ${error?.message || "unknown error"}`, 500);
       }
       if (inserted.length !== ops.length) return err("illustration was only partially saved; retry the complete drawing", 500);
+      let lessonStep = null;
+      if (linkedLesson) {
+        const kinds = [...new Set(ops.map((op) => op.t))];
+        const isErase = ops.every((op) => ["erase", "clear", "undo"].includes(op.t));
+        lessonStep = await insertLessonStep(linkedLesson.id, {
+          kind: isErase ? "erase" : "draw",
+          sheet_id: sheetId,
+          op_from: Math.min(...inserted.map((row) => Number(row.seq))),
+          op_to: Math.max(...inserted.map((row) => Number(row.seq))),
+          body: trim(b.caption || b.explanation, 500),
+          meta: { operation_types: kinds, author }
+        });
+      }
       const { data: t } = await sb.from("cr_tasks").select("*").eq("session_id", sheet.session_id).eq("phase", "draw").order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (t) await sb.from("cr_tasks").update({ state: { ...t.state, drawn: true, drawn_ops: inserted.length, drawn_at: nowISO() }, updated_at: nowISO() }).eq("id", t.id);
       await insertMessage({
@@ -1211,10 +1324,10 @@ async function handler(req) {
         author: admin ? "admin" : "Seat 9 \xB7 illustrator",
         kind: "board_event",
         body: `Illustrator saved ${inserted.length} operation(s) on Sheet ${sheet.idx}.`,
-        meta: { sheet_id: sheetId, count: inserted.length, saved: true }
+        meta: { sheet_id: sheetId, count: inserted.length, saved: true, ...linkedLesson ? { lesson_id: linkedLesson.id, lesson_step: lessonStep?.step_no, lesson_action: lessonStep?.kind } : {} }
       });
       await tick(sheet.session_id);
-      return json({ ok: true, inserted: inserted.length, ops: inserted });
+      return json({ ok: true, inserted: inserted.length, ops: inserted, ...lessonStep ? { lesson_step: lessonStep } : {} });
     }
     if (route === "memory" && method === "GET") {
       const sessionId = str(url.searchParams.get("session_id"));
@@ -1250,16 +1363,22 @@ async function handler(req) {
       if (!isAdmin(url, req)) return err("admin key required (?admin=KEY)", 403);
       const sessionId = str(url.searchParams.get("session_id"));
       if (!sessionId) return err("session_id is required");
-      const [{ data: session }, { data: messages }, { data: tasks }, { data: sheets }, memory, { data: files }, { data: media }] = await Promise.all([
+      const [{ data: session }, { data: messages }, { data: tasks }, { data: sheets }, memory, { data: files }, { data: media }, { data: lessons }] = await Promise.all([
         sb.from("cr_sessions").select("*").eq("id", sessionId).maybeSingle(),
         sb.from("cr_messages").select("*").eq("session_id", sessionId).order("seq"),
         sb.from("cr_tasks").select("*").eq("session_id", sessionId),
         sb.from("cr_sheets").select("*").eq("session_id", sessionId).order("idx"),
         sessionMemory(sessionId),
         sb.from("cr_files").select("*").or(`session_id.eq.${sessionId},session_id.is.null`).is("deleted_at", null),
-        sb.from("cr_media").select("*").eq("session_id", sessionId)
+        sb.from("cr_media").select("*").eq("session_id", sessionId),
+        sb.from("cr_lessons").select("*").eq("session_id", sessionId).order("created_at")
       ]);
       if (!session) return err("session not found", 404);
+      let lessonSteps = [];
+      if (lessons?.length) {
+        const { data } = await sb.from("cr_lesson_steps").select("*").in("lesson_id", lessons.map((lesson) => lesson.id)).order("lesson_id").order("step_no");
+        lessonSteps = data ?? [];
+      }
       const enc = new TextEncoder();
       const safeTitle = String(session.title).replace(/[^a-z0-9_-]+/gi, "-").slice(0, 60) || "session";
       const root = `${safeTitle}-${sessionId}`;
@@ -1267,7 +1386,7 @@ async function handler(req) {
 
 ${m.body}
 `).join("\n");
-      const entries = [{ name: `${root}/transcript.md`, bytes: enc.encode(transcript) }, { name: `${root}/MEMORY.md`, bytes: enc.encode(memory.body || "") }, { name: `${root}/manifest.json`, bytes: enc.encode(JSON.stringify({ session, files, media, sheets }, null, 2)) }];
+      const entries = [{ name: `${root}/transcript.md`, bytes: enc.encode(transcript) }, { name: `${root}/MEMORY.md`, bytes: enc.encode(memory.body || "") }, { name: `${root}/manifest.json`, bytes: enc.encode(JSON.stringify({ session, files, media, sheets, lessons, lessonSteps }, null, 2)) }];
       for (const task of tasks ?? []) {
         const rows = (messages ?? []).filter((m) => m.meta?.task_id === task.id && ["note", "objection", "verify", "vote", "draft"].includes(m.kind));
         entries.push({ name: `${root}/deliberation/${task.id}.md`, bytes: enc.encode(rows.map((m) => `## ${m.author} \xB7 ${m.kind}

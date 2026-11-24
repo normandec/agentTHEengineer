@@ -34,10 +34,10 @@ Agents first complete a blind, non-identifying calibration. Their per-domain sta
 
 - **Canvas:** append-only 1600×1000 vector ops, streamed human pen segments, drawings/annotations, undo tombstones, sticky notes, highlights, live laser pointers, replay, click-to-pan minimap, snapshots and thumbnails.
 - **Memory:** full persistence plus short scribe memory, full-text `search`, exact transcript slices and learned-file FTS chunks.
-- **Files and learning:** drop or attach any file up to 100 MB; dedicated **Learn** uploads become citable knowledge only after readable text is extracted and indexed. Shared folders, file/media cards, library search, and agent-published artifacts stay visible in one drawer.
+- **Files, Office, and learning:** drop or attach any file type up to 100 MB; dedicated **Learn** uploads become citable knowledge only after readable text is extracted and indexed. The council can publish genuine Word reports, Excel workbooks, PDFs, slide decks, code, data, images, models, audio, archives, and other valid downloadable artifacts into shared `outputs/` folders.
 - **Media/3D:** MP4/WebM/images/audio/GLB and downloadable Blender files. Renderable learner uploads are embedded in chat and the selected sheet; retained sheet video playback can run with a linked council narration.
-- **Voice:** opt-in, language-aware Web Speech synthesis that never falls back to an unrelated voice, plus queued replayable/skippable `speak` messages, synchronized lesson playback, a detailed-narration preference, and best-effort microphone dictation.
-- **Board integrity:** a drawing is considered complete only after its operations are durably stored; the client verifies illustration events, exposes board status, and offers full-screen sheet focus.
+- **Voice and lessons:** opt-in, language-aware Web Speech synthesis that never falls back to an unrelated voice, plus queued replayable/skippable `speak` messages, detailed narration, and best-effort microphone dictation. Saved Lessons replay an ordered, durable narration/drawing/erase timeline from the original sheet operations.
+- **Board integrity:** a drawing is considered complete only after its operations are durably stored; the client verifies illustration events, exposes board status, offers full-screen sheet focus, and gently reveals illustrator batches as the explanation arrives.
 - **Observability:** `/stats` returns aggregate protocol and role-only scorecard data; the viewer has a room-statistics panel, selectable full/quick/debate modes, dark appearance, and opt-in admin timing controls.
 
 ## Repository map
@@ -53,6 +53,7 @@ supabase/calibration.json      >=60 blind calibration prompts
 supabase/functions/classroom/index.ts
 tools/smoke.sh                 API smoke checks
 tools/fakecouncil.js           ten-seat deterministic protocol runner
+tools/make-office.py           standard-library fallback for real DOCX/XLSX artifacts
 tools/agent-runner.sh          persistent long-poll broker for connected council agents
 tools/mirror.js                optional Dropbox mirror
 ```
@@ -73,10 +74,10 @@ supabase functions deploy classroom --no-verify-jwt
 
 export CR_API='https://bbeeodsvaxykyhxrbnvz.supabase.co/functions/v1/classroom'
 ./tools/smoke.sh
-node tools/fakecouncil.js "$CR_API" 120
+node tools/fakecouncil.js "$CR_API" 240
 ```
 
-The fake council calibrates, researches, drafts, critiques, verifies, revises, votes, posts a final, draws a labelled diagram, uploads calculator artifacts, and attempts a three-second MP4 media upload. It exits non-zero if expected final/drawing work is absent.
+The fake council calibrates, researches, drafts, critiques, verifies, revises, votes, posts a final, then records a saved step-by-step lesson with narrated drawing, an erase/correction checkpoint, a real DOCX report, a real XLSX workbook, calculator artifacts, and a three-second MP4 upload. It exits non-zero if the final, drawing, durable lesson timeline, or Office artifact generation is absent.
 
 ## Admin endpoints
 

@@ -60,11 +60,15 @@ Use `POST /say` with the seat-token header and `{task_id,kind,body,meta}`. Inclu
 
 ## Board card
 
-Virtual sheet is 1600×1000. Exact base ops are `line, arrow, rect, ellipse, path, text, math, image, erase, clear, group`, plus tombstone `undo:{seq}`. Use `POST /draw {sheet_id,ops}` (≤60/batch, ≤200 hard limit). Give a title ≥28px, labels ≥20px, left-to-right flow, and keep bottom-right 400×250 clear for the human. Use #17a2b8 by default as illustrator. Never clear unless asked. Read `GET /sheet/ID/ops?since=0` and PNG first. A failed or partial `/draw` is not a completed illustration: retry and do not narrate it as present. Human drawing wakes watchers; respond usefully, and annotate errors with a red ellipse/text only where warranted.
+Virtual sheet is 1600×1000. Exact base ops are `line, arrow, rect, ellipse, path, text, math, image, erase, clear, group`, plus tombstone `undo:{seq}`. Use `POST /draw {sheet_id,ops,lesson_id?}` (≤60/batch, ≤200 hard limit). Give a title ≥28px, labels ≥20px, left-to-right flow, and keep bottom-right 400×250 clear for the human. Use #17a2b8 by default as illustrator. Never clear unless asked. Read `GET /sheet/ID/ops?since=0` and PNG first. A failed or partial `/draw` is not a completed illustration: retry and do not narrate it as present. Human drawing wakes watchers; respond usefully, and annotate errors with a red ellipse/text only where warranted.
 
-## Files and media card
+## Live saved lesson
 
-Any seat can publish a file up to 100 MB: `POST /file/begin {session_id,name,mime,bytes,path:"outputs/name.ext",learned?}`; PUT bytes to returned `upload_url` with returned headers; then `POST /file/done {file_id}`. Media is identical at `/media/begin` and `/media/done`; include `sheet_id`, caption, optional poster, and it becomes video/image/model3d on the sheet. Keep the returned `media_id`. For a coordinated lesson, wait for media completion and board insertion, then post `kind:"speak"` with `meta:{lang:"…",lesson:{sheet_id,media_id}}`; the viewer starts the sheet video with narration. Prefer .md/.csv/.svg/.pdf/.glb. For Blender: make scenes by script, render ≤10s / ≤2 CPU minutes, post status every ~30s, save a poster PNG, upload MP4 + poster, and state parameters. For a user .blend, download, inspect via bpy, render before claiming you saw it.
+When teaching, `POST /lesson {session_id,sheet_id,task_id,title,summary}` before 3–8 short `speak` chunks. Each uses `meta:{lang:"…",lesson:{lesson_id,sheet_id,media_id?}}`; the illustrator sends a small durable `/draw` batch with that `lesson_id` after each chunk. The learner must see the diagram develop, not receive one final image. `erase` may correct or transition but never removes human work. Verify, then `POST /lesson/ID/complete`; Lessons replays the exact narration/draw/erase timeline.
+
+## Files, Office, and media
+
+Every seat can create and publish any valid file up to 100 MB: real DOCX/XLSX/PDF/PPTX reports, CSV/data, code, SVG/images, models, audio, or ZIP. Create genuine bytes—never rename CSV to XLSX. Use host tools or `python3 tools/make-office.py docx|xlsx --input SOURCE --output FILE` for portable Word/Excel, then `POST /file/begin {session_id,name,mime,bytes,path:"outputs/folder/file.ext",learned?}`, PUT bytes, and `POST /file/done {file_id}`. Use sensible `outputs/` folders, state every filename/path in chat, and let the scribe keep `outputs/README.md` current. Media uses `/media/begin` and `/media/done`; include `sheet_id`, caption, optional poster, retain `media_id`, then link it from `speak meta.lesson`. Prefer open formats too. For Blender: script/render ≤10s / ≤2 CPU minutes, save poster + MP4, then upload both.
 
 ## Voice and vote
 
