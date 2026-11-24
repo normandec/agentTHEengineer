@@ -1,4 +1,6 @@
 /* Loaded after the base style sheet: high-signal additions for files, media, voice and live council state. */
+.theme-dark .product-version { color:#c4d3e8; border-color:#40516c; background:#1b2638; }
+@media (max-width:520px) { .product-version { margin-left:-3px; padding:2px 5px; font-size:8px; } }
 :root { --gold:#f5b301; --research-a:#1a73e8; --research-b:#4a90e2; --research-c:#7fb3f0; --explainer:#2ea44f; --critic:#d7263d; --verifier:#7b2cbf; --calculator:#f26419; --illustrator:#17a2b8; --scribe:#6c757d; }
 .seat-dot { display:grid; place-items:center; color:transparent; background:color-mix(in srgb,var(--seat-color,#dfe4eb) 26%,white); border-color:color-mix(in srgb,var(--seat-color,#dfe4eb) 45%,white); font:7px/1 "DM Mono",monospace; cursor:pointer; }
 .seat-dot.idle { background:color-mix(in srgb,var(--seat-color) 42%,white); }.seat-dot.working { background:var(--seat-color); animation:seat-pulse 1s ease infinite; }.seat-dot.voting { background:var(--seat-color); box-shadow:0 0 0 3px color-mix(in srgb,var(--seat-color) 25%,transparent); }.seat-dot.offline { background:transparent; border-style:dashed; }.seat-dot.watching::after { content:"◉"; font-size:7px; color:var(--seat-color); position:absolute; margin-top:-14px; }.seat-dot.voted { color:#fff; }

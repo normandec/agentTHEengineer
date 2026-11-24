@@ -13,6 +13,7 @@ button:focus-visible, textarea:focus-visible, .upload-button:focus-within { outl
 .brand { color:var(--ink); font-family:"DM Mono",monospace; font-size:13px; font-weight:500; letter-spacing:.11em; text-decoration:none; display:flex; align-items:center; gap:8px; white-space:nowrap; }
 .brand-mark,.mini-mark { display:inline-grid; place-items:center; background:var(--ink); color:#fff; font-family:"DM Sans",sans-serif; font-weight:700; letter-spacing:-.05em; border-radius:6px; }
 .brand-mark { width:27px; height:27px; font-size:11px; }
+.product-version { align-self:center; margin-left:-19px; padding:3px 6px; color:#52627a; border:1px solid #d9e1ed; border-radius:999px; background:#f8faff; font:9px "DM Mono",monospace; letter-spacing:.04em; white-space:nowrap; }
 .council-strip { display:flex; align-items:center; gap:11px; color:var(--muted); font-size:12px; min-width:220px; }
 .council-label b { color:var(--ink); font-weight:600; }
 .seat-dots { display:flex; align-items:center; gap:4px; }
