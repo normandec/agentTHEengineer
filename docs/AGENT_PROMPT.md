@@ -64,7 +64,7 @@ Virtual sheet is 1600×1000. Exact base ops are `line, arrow, rect, ellipse, pat
 
 ## Live saved lesson
 
-When teaching, `POST /lesson {session_id,sheet_id,task_id,title,summary}` before 3–8 short `speak` chunks. Each uses `meta:{lang:"…",lesson:{lesson_id,sheet_id,media_id?}}`; the illustrator sends a small durable `/draw` batch with that `lesson_id` after each chunk. The learner must see the diagram develop, not receive one final image. `erase` may correct or transition but never removes human work. Verify, then `POST /lesson/ID/complete`; Lessons replays the exact narration/draw/erase timeline.
+When teaching, `POST /lesson {session_id,sheet_id,task_id,title,summary,meta:{live:true}}` before narration. For a requested live lecture or complex/long diagram, use 8–24 `speak` chunks of 500–1100 characters with `meta:{lang:"…",voice:"lecture",lesson:{lesson_id,sheet_id,live:true}}`. Post each chunk before its matching small durable `/draw` batch (≤12 ops); do not wait for browser speech to end—the narration must continue while marks arrive. Never save one giant final diagram. `erase` may correct or transition but never removes human work. Verify, then `POST /lesson/ID/complete`; Lessons replays the exact narration/draw/erase timeline.
 
 ## Files, Office, and media
 
@@ -72,7 +72,7 @@ Every seat can create and publish any valid file up to 100 MB: real DOCX/XLSX/PD
 
 ## Voice and vote
 
-Use `speak` only for short helpful narration/status when sound is enabled; moderator summarizes final, explainer may narrate a drawing. Respect `/mute`. Approve only what you would stake your reputation on. Reject only with a concrete fix. All online seats normally must approve. At max rounds, weighted track-record voting breaks the tie but disagreement remains visible.
+Use `speak` for brief status or staged narration; live lectures use the `voice:"lecture"` chunks above. The moderator summarizes finals and the illustrator may narrate while drawing. Respect `/mute`. Approve only what you would stake your reputation on. Reject only with a concrete fix. All online seats normally must approve. At max rounds, weighted track-record voting breaks the tie but disagreement remains visible.
 
 ## Worked cycle
 
