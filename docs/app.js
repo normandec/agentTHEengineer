@@ -11,7 +11,7 @@
   const storageKey = `ai-classroom-session:${API}`;
   const state = { sessionId: null, latestSeq: 0, messages: new Map(), task: null, sheets: [], activeSheet: null, lessons: [], council: [], files: [], folders: [], fileFolder: "", media: [], settings: {}, polling: false, opsPolling: false, pngDirty: false, toastTimer: null, drawerTab: "sheets", seenSpeak: new Set(), mode: localStorage.getItem("ai-classroom-mode") || "full", autoscroll: localStorage.getItem("ai-classroom-autoscroll") !== "off", theme: localStorage.getItem("ai-classroom-theme") || "light", stats: null, chatRenderKey: null, forceChatFollow: false, chatFocused: false, boardFocused: false, pendingLesson: null, lessonPlayback: null };
   const els = {
-    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), liveLesson: $("#live-lesson-status"), boardStatus: $("#board-status"), boardFocus: $("#board-fullscreen-button"), playLesson: $("#play-lesson"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), lessonsList: $("#lessons-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), knowledgeSummary: $("#knowledge-summary"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), knowledgeInput: $("#knowledge-input"), libraryKnowledgeInput: $("#library-knowledge-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count"), lessonsCount: $("#lessons-count")
+    chat: $("#chat-log"), chatFocus: $("#chat-fullscreen-button"), liveLecture: $("#live-lecture-button"), jumpLatest: $("#jump-latest"), notice: $("#connection-notice"), form: $("#ask-form"), question: $("#question-input"), ask: $("#ask-button"), phase: $("#phase-pill"), phaseSlot: $("#phase-bar-slot"), ticker: $("#live-ticker"), council: $("#council-strip"), dots: $(".seat-dots"), sheetName: $("#sheet-name"), sync: $("#sheet-sync"), liveLesson: $("#live-lesson-status"), boardStatus: $("#board-status"), boardFocus: $("#board-fullscreen-button"), playLesson: $("#play-lesson"), ops: $("#ops-count"), empty: $("#board-empty"), zoom: $("#zoom-reset"), toast: $("#toast"), sheetsList: $("#sheets-list"), lessonsList: $("#lessons-list"), filesList: $("#files-list"), mediaList: $("#media-list"), knowledgeList: $("#knowledge-list"), knowledgeSummary: $("#knowledge-summary"), drawer: $("#sheets-drawer"), scrim: $("#drawer-scrim"), image: $("#image-input"), filesInput: $("#files-input"), knowledgeInput: $("#knowledge-input"), libraryKnowledgeInput: $("#library-knowledge-input"), uploadQueue: $("#upload-queue"), drop: $("#drop-zone"), filesCount: $("#files-count"), lessonsCount: $("#lessons-count")
   };
 
   function api(path, options = {}) {
@@ -593,6 +593,13 @@
     } catch (error) { state.forceChatFollow = false; toast(`The question was not sent: ${error.message}`, 5000); }
     finally { els.ask.disabled = false; els.question.disabled = false; els.question.focus(); }
   }
+  function startLiveLecture() {
+    const topic = els.question.value.trim() || window.prompt("What should the council teach in a live lecture?");
+    if (!topic?.trim()) { toast("Type a topic, then start the live lecture."); return; }
+    voice.setEnabled(true);
+    toast("Sound is on. The council will narrate while it builds the sheet.");
+    ask(`Start a live, extended narrated lesson about: ${topic.trim()}. Create the saved live lesson first, explain in voice while small verified drawing batches arrive, and finish with a recap.`);
+  }
 
   function openDrawer() { els.drawer.classList.add("open"); els.drawer.setAttribute("aria-hidden", "false"); els.scrim.hidden = false; $("#sheets-button").setAttribute("aria-expanded", "true"); $("#files-button").setAttribute("aria-expanded", "true"); $("#learn-button").setAttribute("aria-expanded", "true"); $("#lessons-button").setAttribute("aria-expanded", "true"); }
   function closeDrawer() { els.drawer.classList.remove("open"); els.drawer.setAttribute("aria-hidden", "true"); els.scrim.hidden = true; $("#sheets-button").setAttribute("aria-expanded", "false"); $("#files-button").setAttribute("aria-expanded", "false"); $("#learn-button").setAttribute("aria-expanded", "false"); $("#lessons-button").setAttribute("aria-expanded", "false"); }
@@ -749,6 +756,7 @@
   $("#new-session").addEventListener("click", () => { if (confirm("Start a new session? This keeps older sessions in the database, but switches this browser to a clean room.")) createSession(); });
   $("#sheets-button").addEventListener("click", openDrawer); $("#close-sheets").addEventListener("click", closeDrawer); els.scrim.addEventListener("click", closeDrawer); $("#new-sheet").addEventListener("click", newSheet);
   $("#about-button").addEventListener("click", () => $("#about-dialog").showModal()); $("#close-about").addEventListener("click", () => $("#about-dialog").close());
+  els.liveLecture.addEventListener("click", startLiveLecture);
   $("#ask-sheet").addEventListener("click", () => ask("Please explain what is shown on the current sheet and how it relates to our discussion."));
   $("#download-png").addEventListener("click", downloadPNG); $("#undo-button").addEventListener("click", () => board.undoLatest());
   $("#replay-button").addEventListener("click", () => board.replayLimit === null ? board.replay() : board.stopReplay());
