@@ -121,7 +121,7 @@ async function sampleVideo(agent, sessionId, sheetId) {
 async function lessonSpeak(agent, task, lesson, body, extra = {}) {
   await post("/say", {
     task_id: task.id, kind: "speak", body,
-    meta: { round: task.round, lang: "en", lesson: { lesson_id: lesson.id, sheet_id: lesson.sheet_id, ...extra } },
+    meta: { round: task.round, lang: "en", voice: "lecture", lesson: { lesson_id: lesson.id, sheet_id: lesson.sheet_id, live: true, ...extra } },
   }, agent.token);
 }
 async function lessonDraw(agent, lesson, ops, caption) {
@@ -134,7 +134,7 @@ async function draw(agent, task, sheet) {
   if (agent.done.has(key)) return;
   const created = await post("/lesson", {
     session_id: task.session_id, sheet_id: sheet.id, task_id: task.id,
-    title: "Heat pumps: follow the heat", summary: "A short narrated diagram that builds the heat-pump cycle in visible steps.",
+    title: "Heat pumps: follow the heat", summary: "A live narrated diagram that builds the heat-pump cycle in visible steps.", meta: { live: true, mode: "live_lecture" },
   }, agent.token);
   const lesson = created.lesson;
   if (!lesson?.id) throw new Error("lesson record was not created");
@@ -165,6 +165,7 @@ async function draw(agent, task, sheet) {
   await lessonSpeak(agent, task, lesson, "Replay this lesson to follow the outdoor coil, compressor, and indoor coil in order. The animation is linked to this final recap.", { media_id: media.media_id });
   const timeline = await request(`/lesson/${lesson.id}`);
   if ((timeline.steps || []).length < 7) throw new Error("lesson timeline is missing narration or drawing checkpoints");
+  if (!timeline.lesson?.meta?.live || !timeline.steps.some((step) => step.meta?.voice === "lecture")) throw new Error("live lecture narration metadata was not saved");
   await post(`/lesson/${lesson.id}/complete`, {}, agent.token);
   agent.done.add(key);
   console.log("seat 9 → verified progressive saved lesson with narration, drawing, erase, and animation");

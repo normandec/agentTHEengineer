@@ -87,7 +87,10 @@
     setVerbose(value) { this.verbose = !!value; localStorage.setItem("ai-classroom-voice-verbose", this.verbose ? "on" : "off"); }
     enqueue(message) {
       if (!message?.body || !this.enabled || !("speechSynthesis" in window)) return;
-      const body = this.verbose ? message.body : String(message.body).slice(0, 520);
+      // A live lecture is deliberately longer than a status update. Keep its
+      // staged 1,200-character chunks intact even when ordinary narration is concise.
+      const liveLecture = message.meta?.voice === "lecture" || message.meta?.lesson?.live === true;
+      const body = this.verbose || liveLecture ? String(message.body).slice(0, 1200) : String(message.body).slice(0, 520);
       this.queue.push({ ...message, body }); this.next();
     }
     next() {
